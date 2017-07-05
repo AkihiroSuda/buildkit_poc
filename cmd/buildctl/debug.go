@@ -9,6 +9,9 @@ var debugCommand = cli.Command{
 	Name:  "debug",
 	Usage: "debug utilities",
 	Subcommands: []cli.Command{
-		debug.DumpCommand,
+		debug.DumpLLBCommand,
+		debug.DumpBlobmapCommand,
+		debug.DumpCacheCommand,
+		debug.DumpBoltCommand,
 	},
 }
