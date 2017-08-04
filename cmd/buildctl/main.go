@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"os"
 
+	controlapi "github.com/moby/buildkit/api/services/control"
 	"github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/util/appcontext"
 	"github.com/moby/buildkit/util/appdefaults"
 	"github.com/moby/buildkit/util/profiler"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	"golang.org/x/net/context"
 )
 
 func main() {
@@ -25,6 +28,10 @@ func main() {
 			Name:  "socket",
 			Usage: "listening socket",
 			Value: appdefaults.Socket,
+		},
+		cli.StringFlag{
+			Name:  "controller",
+			Usage: "controller constraint",
 		},
 	}
 
@@ -51,4 +58,15 @@ func main() {
 
 func resolveClient(c *cli.Context) (*client.Client, error) {
 	return client.New(c.GlobalString("socket"), client.WithBlock())
+}
+
+func resolveContext(c *cli.Context) context.Context {
+	md := controlapi.Metadata{
+		Constraints: []controlapi.Constraint{
+			controlapi.Constraint{
+				Controller: c.GlobalString("controller"),
+			},
+		},
+	}
+	return client.ContextWithMetadata(appcontext.Context(), md)
 }

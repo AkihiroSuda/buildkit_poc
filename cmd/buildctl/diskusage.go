@@ -8,7 +8,6 @@ import (
 
 	units "github.com/docker/go-units"
 	"github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/util/appcontext"
 	"github.com/urfave/cli"
 )
 
@@ -34,7 +33,7 @@ func diskUsage(clicontext *cli.Context) error {
 		return err
 	}
 
-	du, err := c.DiskUsage(appcontext.Context(), client.WithFilter(clicontext.String("filter")))
+	du, err := c.DiskUsage(resolveContext(clicontext), client.WithFilter(clicontext.String("filter")))
 	if err != nil {
 		return err
 	}

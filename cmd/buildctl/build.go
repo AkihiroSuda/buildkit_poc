@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/util/appcontext"
 	"github.com/moby/buildkit/util/progress/progressui"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -57,7 +56,7 @@ func build(clicontext *cli.Context) error {
 
 	ch := make(chan *client.SolveStatus)
 	displayCh := make(chan *client.SolveStatus)
-	eg, ctx := errgroup.WithContext(appcontext.Context())
+	eg, ctx := errgroup.WithContext(resolveContext(clicontext))
 
 	exporterAttrs, err := attrMap(clicontext.StringSlice("exporter-opt"))
 	if err != nil {

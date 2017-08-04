@@ -14,7 +14,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func NewContainerd(root, address string) (*Controller, error) {
+func NewContainerd(name, root, address string) (*Controller, error) {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return nil, errors.Wrapf(err, "failed to create %s", root)
 	}
@@ -32,6 +32,7 @@ func NewContainerd(root, address string) (*Controller, error) {
 		return nil, err
 	}
 
+	opt.Name = name
 	opt.Worker = containerdworker.New(client)
 
 	return NewController(*opt)

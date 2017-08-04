@@ -1,4 +1,4 @@
-// +build containerd,!standalone
+// +build containerd
 
 package main
 
@@ -7,19 +7,18 @@ import (
 	"github.com/urfave/cli"
 )
 
-func appendFlags(f []cli.Flag) []cli.Flag {
-	return append(f, []cli.Flag{
+func init() {
+	extraFlags = append(extraFlags, []cli.Flag{
 		cli.StringFlag{
 			Name:  "containerd",
 			Usage: "containerd socket",
 			Value: "/run/containerd/containerd.sock",
 		},
 	}...)
-}
-
-// root must be an absolute path
-func newController(c *cli.Context, root string) (*control.Controller, error) {
-	socket := c.GlobalString("containerd")
-
-	return control.NewContainerd(root, socket)
+	name := "containerd"
+	controllerFactories[name] =
+		func(c *cli.Context, root string) (*control.Controller, error) {
+			socket := c.GlobalString("containerd")
+			return control.NewContainerd(name, root, socket)
+		}
 }

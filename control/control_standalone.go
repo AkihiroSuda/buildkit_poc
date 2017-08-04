@@ -17,7 +17,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func NewStandalone(root string) (*Controller, error) {
+func NewStandalone(name, root string) (*Controller, error) {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return nil, errors.Wrapf(err, "failed to create %s", root)
 	}
@@ -39,6 +39,7 @@ func NewStandalone(root string) (*Controller, error) {
 		return nil, err
 	}
 
+	opt.Name = name
 	opt.Worker = w
 
 	return NewController(*opt)

@@ -15,10 +15,10 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
 )
 
 type Opt struct {
+	Name             string
 	Snapshotter      snapshot.Snapshotter
 	CacheManager     cache.Manager
 	Worker           worker.Worker
@@ -34,6 +34,9 @@ type Controller struct { // TODO: ControlService
 }
 
 func NewController(opt Opt) (*Controller, error) {
+	if opt.Name == "" {
+		return nil, errors.New("unnamed controller instance")
+	}
 	c := &Controller{
 		opt: opt,
 		solver: solver.NewLLBSolver(solver.LLBOpt{
@@ -44,11 +47,6 @@ func NewController(opt Opt) (*Controller, error) {
 		}),
 	}
 	return c, nil
-}
-
-func (c *Controller) Register(server *grpc.Server) error {
-	controlapi.RegisterControlServer(server, c)
-	return nil
 }
 
 func (c *Controller) DiskUsage(ctx context.Context, r *controlapi.DiskUsageRequest) (*controlapi.DiskUsageResponse, error) {
@@ -169,4 +167,8 @@ func (c *Controller) Session(stream controlapi.Control_SessionServer) error {
 	err := c.opt.SessionManager.HandleConn(stream.Context(), conn, opts)
 	logrus.Debugf("session finished: %v", err)
 	return err
+}
+
+func (c *Controller) MeetConstraint(constraint *controlapi.Constraint) bool {
+	return constraint.Controller == c.opt.Name || constraint.Controller == ""
 }

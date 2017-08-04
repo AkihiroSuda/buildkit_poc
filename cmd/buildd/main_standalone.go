@@ -1,4 +1,4 @@
-// +build standalone,!containerd
+// +build standalone
 
 package main
 
@@ -7,11 +7,10 @@ import (
 	"github.com/urfave/cli"
 )
 
-func appendFlags(f []cli.Flag) []cli.Flag {
-	return f
-}
-
-// root must be an absolute path
-func newController(c *cli.Context, root string) (*control.Controller, error) {
-	return control.NewStandalone(root)
+func init() {
+	name := "standalone"
+	controllerFactories[name] =
+		func(c *cli.Context, root string) (*control.Controller, error) {
+			return control.NewStandalone(name, root)
+		}
 }

@@ -32,13 +32,17 @@ ENV CGO_ENABLED=0
 ARG GOOS=linux
 RUN go build -ldflags '-d' -o /usr/bin/buildctl ./cmd/buildctl
 
+FROM unit-tests AS buildd
+ENV CGO_ENABLED=0
+RUN go build -ldflags '-d -X main.DefaultController=containerd'  -o /usr/bin/buildd -tags "standalone containerd" ./cmd/buildd
+
 FROM unit-tests AS buildd-standalone
 ENV CGO_ENABLED=0
-RUN go build -ldflags '-d'  -o /usr/bin/buildd-standalone -tags standalone ./cmd/buildd
+RUN go build -ldflags '-d -X main.DefaultController=standalone'  -o /usr/bin/buildd-standalone -tags standalone ./cmd/buildd
 
 FROM unit-tests AS buildd-containerd
 ENV CGO_ENABLED=0
-RUN go build -ldflags '-d'  -o /usr/bin/buildd-containerd -tags containerd ./cmd/buildd
+RUN go build -ldflags '-d -X main.DefaultController=containerd'  -o /usr/bin/buildd-containerd -tags containerd ./cmd/buildd
 
 FROM unit-tests AS integration-tests
 COPY --from=buildd-containerd /usr/bin/buildd-containerd /usr/bin
