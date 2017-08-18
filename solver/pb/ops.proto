@@ -75,6 +75,6 @@ message Metadata {
 }
 
 message MetadataEntry {
-	// bool invalidate_cache = 1;
+	bool ignore_cache = 1;
 	// TODO: add worker constraint, etc.
 }

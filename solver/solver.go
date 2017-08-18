@@ -429,7 +429,11 @@ func (s *Solver) getRef(ctx context.Context, g *vertex, index Index) (ref Refere
 		}
 		if lookupRef != nil {
 			g.recursiveMarkCached(ctx)
-			returnRef = lookupRef.(Reference)
+			if md, ok := g.SysMetadata().(pb.MetadataEntry); ok && md.IgnoreCache {
+				logrus.Debugf("Ignoring cache %s %v %s", g.digest, index, g.name)
+			} else {
+				returnRef = lookupRef.(Reference)
+			}
 			return true, nil
 		}
 		return false, nil

@@ -13,6 +13,7 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/moby/buildkit/util/progress/progressui"
+	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
@@ -40,6 +41,10 @@ var buildCommand = cli.Command{
 			Name:  "local",
 			Usage: "Allow build access to the local directory",
 		},
+		cli.BoolFlag{
+			Name:  "no-cache",
+			Usage: "Disable cache lookup",
+		},
 	},
 }
 
@@ -48,7 +53,19 @@ func read(r io.Reader, clicontext *cli.Context) ([][]byte, pb.Metadata, error) {
 	if err != nil {
 		return nil, pb.Metadata{}, errors.Wrap(err, "failed to parse input")
 	}
-	var meta pb.Metadata // empty ATM
+	var meta pb.Metadata
+	meta.Entries = make(map[digest.Digest]pb.MetadataEntry, 0)
+	for _, dt := range def {
+		var op pb.Op
+		if err := (&op).Unmarshal(dt); err != nil {
+			return nil, pb.Metadata{}, errors.Wrap(err, "failed to parse llb proto op")
+		}
+		dig := digest.FromBytes(dt)
+		metaEntry := pb.MetadataEntry{}
+		metaEntry.IgnoreCache = clicontext.Bool("no-cache")
+		meta.Entries[dig] = metaEntry
+	}
+
 	return def, meta, nil
 }
 
