@@ -92,7 +92,7 @@ func (c *Controller) Solve(ctx context.Context, req *controlapi.SolveRequest) (*
 
 	var vertex solver.Vertex
 	if req.Frontend == "" {
-		v, err := solver.LoadLLB(req.Definition)
+		v, err := solver.LoadLLB(req.Definition, req.DefinitionMetadata)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to load llb definition")
 		}

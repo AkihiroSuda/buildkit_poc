@@ -24,6 +24,8 @@ message ExecOp {
 	repeated Mount mounts = 2;
 }
 
+// Meta is unrelated to LLB metadata.
+// FIXME: rename (ExecContext? ExecArgs?)
 message Meta {
 	repeated string args = 1;
 	repeated string env = 2;
@@ -60,8 +62,19 @@ message BuildOp {
 	repeated bytes def = 3;
 	map<string, string> attrs = 4;
 	// outputs
+	// TODO: add Metadata (bytes?) for def
 }
 
 message BuildInput {
 	int64 input = 1 [(gogoproto.customtype) = "InputIndex", (gogoproto.nullable) = false];
+}
+
+message Metadata {
+	// key = LLB op digest string. Currently, empty string is not expected but may change in the future.
+	map<string, MetadataEntry> entries = 1 [(gogoproto.castkey) = "github.com/opencontainers/go-digest.Digest", (gogoproto.nullable) = false];
+}
+
+message MetadataEntry {
+	bool ignore_cache = 1;
+	// TODO: add worker constraint, etc.
 }

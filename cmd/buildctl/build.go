@@ -3,13 +3,17 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"io/ioutil"
 	"os"
 	"strings"
 
 	"github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/moby/buildkit/util/progress/progressui"
+	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
@@ -45,7 +49,32 @@ var buildCommand = cli.Command{
 			Name:  "frontend-opt",
 			Usage: "Define custom options for frontend",
 		},
+		cli.BoolFlag{
+			Name:  "no-cache",
+			Usage: "Disable cache for all the vertices. Frontend is not supported.",
+		},
 	},
+}
+
+func read(r io.Reader, clicontext *cli.Context) ([][]byte, pb.Metadata, error) {
+	def, err := llb.ReadFrom(r)
+	if err != nil {
+		return nil, pb.Metadata{}, errors.Wrap(err, "failed to parse input")
+	}
+	var meta pb.Metadata
+	meta.Entries = make(map[digest.Digest]pb.MetadataEntry, 0)
+	for _, dt := range def {
+		var op pb.Op
+		if err := (&op).Unmarshal(dt); err != nil {
+			return nil, pb.Metadata{}, errors.Wrap(err, "failed to parse llb proto op")
+		}
+		dig := digest.FromBytes(dt)
+		metaEntry := pb.MetadataEntry{}
+		metaEntry.IgnoreCache = clicontext.Bool("no-cache")
+		meta.Entries[dig] = metaEntry
+	}
+
+	return def, meta, nil
 }
 
 func build(clicontext *cli.Context) error {
@@ -82,8 +111,22 @@ func build(clicontext *cli.Context) error {
 		return errors.Wrap(err, "invalid local")
 	}
 
+	var (
+		def      [][]byte
+		metadata pb.Metadata
+	)
+	if clicontext.String("frontend") == "" {
+		def, metadata, err = read(os.Stdin, clicontext)
+		if err != nil {
+			return err
+		}
+	} else {
+		if clicontext.Bool("no-cache") {
+			return errors.New("no-cache is not supported for frontends")
+		}
+	}
 	eg.Go(func() error {
-		return c.Solve(ctx, os.Stdin, client.SolveOpt{
+		return c.Solve(ctx, def, metadata, client.SolveOpt{
 			Exporter:      clicontext.String("exporter"),
 			ExporterAttrs: exporterAttrs,
 			LocalDirs:     localDirs,

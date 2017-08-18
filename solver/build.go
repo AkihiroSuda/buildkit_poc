@@ -110,7 +110,7 @@ func (b *buildOp) Run(ctx context.Context, inputs []Reference) (outputs []Refere
 	lm.Unmount()
 	lm = nil
 
-	v, err := LoadLLB(def)
+	v, err := LoadLLB(def, nil) // BuildOp does not support metadata (yet)
 	if err != nil {
 		return nil, err
 	}

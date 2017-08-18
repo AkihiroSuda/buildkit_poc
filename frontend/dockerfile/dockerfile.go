@@ -41,7 +41,7 @@ func (f *dfFrontend) Solve(ctx context.Context, llbBridge frontend.FrontendLLBBr
 		return nil, err
 	}
 
-	ref, err := llbBridge.Solve(ctx, dt)
+	ref, err := llbBridge.Solve(ctx, dt, nil) // TODO: per-vertex metadata
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +98,7 @@ func (f *dfFrontend) Solve(ctx context.Context, llbBridge frontend.FrontendLLBBr
 		return nil, err
 	}
 
-	retRef, err = llbBridge.Solve(ctx, dt)
+	retRef, err = llbBridge.Solve(ctx, dt, nil) // TODO: per-vertex metadata
 	if err != nil {
 		return nil, err
 	}

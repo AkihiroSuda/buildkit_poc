@@ -11,7 +11,6 @@ import (
 	"time"
 
 	controlapi "github.com/moby/buildkit/api/services/control"
-	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
@@ -31,24 +30,20 @@ type SolveOpt struct {
 	// Session string
 }
 
-func (c *Client) Solve(ctx context.Context, r io.Reader, opt SolveOpt, statusChan chan *SolveStatus) error {
+// Solve calls Solve on the controller.
+// def and metadata are empty if opt.Frontend is set.
+func (c *Client) Solve(ctx context.Context, def [][]byte, metadata pb.Metadata, opt SolveOpt, statusChan chan *SolveStatus) error {
 	defer func() {
 		if statusChan != nil {
 			close(statusChan)
 		}
 	}()
 
-	var def [][]byte
-	var err error
-	if opt.Frontend == "" {
-		def, err = llb.ReadFrom(r)
-		if err != nil {
-			return errors.Wrap(err, "failed to parse input")
-		}
-
-		if len(def) == 0 {
-			return errors.New("invalid empty definition")
-		}
+	if opt.Frontend == "" && len(def) == 0 {
+		return errors.New("invalid empty definition")
+	}
+	if opt.Frontend != "" && len(def) != 0 {
+		return errors.Errorf("invalid definition for frontend %s", opt.Frontend)
 	}
 
 	syncedDirs, err := prepareSyncedDirs(def, opt.LocalDirs)
@@ -93,13 +88,14 @@ func (c *Client) Solve(ctx context.Context, r io.Reader, opt SolveOpt, statusCha
 			s.Close()
 		}()
 		_, err = c.controlClient().Solve(ctx, &controlapi.SolveRequest{
-			Ref:           ref,
-			Definition:    def,
-			Exporter:      opt.Exporter,
-			ExporterAttrs: opt.ExporterAttrs,
-			Session:       s.ID(),
-			Frontend:      opt.Frontend,
-			FrontendAttrs: opt.FrontendAttrs,
+			Ref:                ref,
+			Definition:         def,
+			Exporter:           opt.Exporter,
+			ExporterAttrs:      opt.ExporterAttrs,
+			Session:            s.ID(),
+			Frontend:           opt.Frontend,
+			FrontendAttrs:      opt.FrontendAttrs,
+			DefinitionMetadata: &metadata,
 		})
 		if err != nil {
 			return errors.Wrap(err, "failed to solve")

@@ -19,7 +19,10 @@ type Vertex interface {
 	Sys() interface{}
 	// Array of vertexes current vertex depends on.
 	Inputs() []Input
-	Name() string // change this to general metadata
+	Name() string // can be removed?
+	// SysMetadata returns a metadata value that corresponds to Sys().
+	// Typically, the value type would be *solver/pb.Metadata.
+	SysMetadata() interface{}
 }
 
 type Index int
@@ -43,6 +46,7 @@ type vertex struct {
 	digest       digest.Digest
 	clientVertex client.Vertex
 	name         string
+	sysMetadata  interface{}
 }
 
 func (v *vertex) initClientVertex() {
@@ -74,6 +78,10 @@ func (v *vertex) Inputs() (inputs []Input) {
 
 func (v *vertex) Name() string {
 	return v.name
+}
+
+func (v *vertex) SysMetadata() interface{} {
+	return v.sysMetadata
 }
 
 func (v *vertex) inputRequiresExport(i int) bool {

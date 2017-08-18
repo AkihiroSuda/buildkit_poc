@@ -89,8 +89,8 @@ type llbBridge struct {
 	solver func(ctx context.Context, v *vertex, i Index) (Reference, error)
 }
 
-func (s *llbBridge) Solve(ctx context.Context, dt [][]byte) (cache.ImmutableRef, error) {
-	v, err := LoadLLB(dt)
+func (s *llbBridge) Solve(ctx context.Context, dt [][]byte, metadata *pb.Metadata) (cache.ImmutableRef, error) {
+	v, err := LoadLLB(dt, metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func (s *Solver) Solve(ctx context.Context, id string, f frontend.Frontend, v Ve
 		solveVertex = vv
 
 		if exp != nil {
-			vv = &vertex{digest: origVertex.Digest(), name: exp.Name()}
+			vv = &vertex{digest: origVertex.Digest(), name: exp.Name(), sysMetadata: origVertex.SysMetadata()}
 			vv.inputs = []*input{{index: 0, vertex: solveVertex}}
 			vv.initClientVertex()
 		}
@@ -327,6 +327,12 @@ func (s *Solver) walkVertex(ctx context.Context, g *vertex, index Index, fn func
 								return false, err
 							}
 							if lookupRef != nil {
+								if md, ok := g.SysMetadata().(pb.MetadataEntry); ok && md.IgnoreCache {
+									logrus.Debugf("Ignoring cache according to per-vertex metadata (IgnoreCache),"+
+										" %+v, %s %v %s",
+										lookupRef, g.digest, index, g.name)
+									return false, nil
+								}
 								inputRef = lookupRef.(Reference)
 								in.vertex.recursiveMarkCached(ctx)
 								return true, nil
@@ -479,6 +485,12 @@ func (s *Solver) getRef(ctx context.Context, g *vertex, index Index) (ref Refere
 			return false, err
 		}
 		if lookupRef != nil {
+			if md, ok := g.SysMetadata().(pb.MetadataEntry); ok && md.IgnoreCache {
+				logrus.Debugf("Ignoring cache according to per-vertex metadata (IgnoreCache),"+
+					" %+v, %s %v %s",
+					lookupRef, g.digest, index, g.name)
+				return false, nil
+			}
 			g.recursiveMarkCached(ctx)
 			returnRef = lookupRef.(Reference)
 			return true, nil

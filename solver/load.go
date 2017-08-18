@@ -8,7 +8,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func LoadLLB(ops [][]byte) (Vertex, error) {
+func LoadLLB(ops [][]byte, metadata *pb.Metadata) (Vertex, error) {
 	if len(ops) == 0 {
 		return nil, errors.New("invalid empty definition")
 	}
@@ -33,7 +33,7 @@ func LoadLLB(ops [][]byte) (Vertex, error) {
 	cache := make(map[digest.Digest]*vertex)
 
 	// TODO: validate the connections
-	return loadLLBVertexRecursive(lastDigest, lastOp, allOps, cache)
+	return loadLLBVertexRecursive(lastDigest, lastOp, allOps, metadata, cache)
 }
 
 func toInternalVertex(v Vertex) *vertex {
@@ -45,7 +45,7 @@ func loadInternalVertexHelper(v Vertex, cache map[digest.Digest]*vertex) *vertex
 	if v, ok := cache[v.Digest()]; ok {
 		return v
 	}
-	vtx := &vertex{sys: v.Sys(), digest: v.Digest(), name: v.Name()}
+	vtx := &vertex{sys: v.Sys(), digest: v.Digest(), name: v.Name(), sysMetadata: v.SysMetadata()}
 	for _, in := range v.Inputs() {
 		vv := loadInternalVertexHelper(in.Vertex, cache)
 		vtx.inputs = append(vtx.inputs, &input{index: in.Index, vertex: vv})
@@ -55,18 +55,22 @@ func loadInternalVertexHelper(v Vertex, cache map[digest.Digest]*vertex) *vertex
 	return vtx
 }
 
-func loadLLBVertexRecursive(dgst digest.Digest, op *pb.Op, all map[digest.Digest]*pb.Op, cache map[digest.Digest]*vertex) (*vertex, error) {
+func loadLLBVertexRecursive(dgst digest.Digest, op *pb.Op, all map[digest.Digest]*pb.Op, metadata *pb.Metadata, cache map[digest.Digest]*vertex) (*vertex, error) {
 	if v, ok := cache[dgst]; ok {
 		return v, nil
 	}
-	vtx := &vertex{sys: op.Op, digest: dgst, name: llbOpName(op)}
+	var metadataEntry interface{}
+	if metadata != nil {
+		metadataEntry, _ = metadata.Entries[dgst] // key error is ok
+	}
+	vtx := &vertex{sys: op.Op, digest: dgst, name: llbOpName(op), sysMetadata: metadataEntry}
 	for _, in := range op.Inputs {
 		dgst := digest.Digest(in.Digest)
 		op, ok := all[dgst]
 		if !ok {
 			return nil, errors.Errorf("failed to find %s", in)
 		}
-		sub, err := loadLLBVertexRecursive(dgst, op, all, cache)
+		sub, err := loadLLBVertexRecursive(dgst, op, all, metadata, cache)
 		if err != nil {
 			return nil, err
 		}
