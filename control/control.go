@@ -77,7 +77,7 @@ func (c *Controller) DiskUsage(ctx context.Context, r *controlapi.DiskUsageReque
 }
 
 func (c *Controller) Solve(ctx context.Context, req *controlapi.SolveRequest) (*controlapi.SolveResponse, error) {
-	v, err := solver.LoadLLB(req.Definition)
+	v, err := solver.LoadLLB(req.Definition, req.DefinitionMetadata)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to load")
 	}

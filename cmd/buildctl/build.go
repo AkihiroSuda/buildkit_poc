@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"io/ioutil"
 	"os"
 	"strings"
 
 	"github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/moby/buildkit/util/progress/progressui"
 	"github.com/pkg/errors"
@@ -40,6 +43,15 @@ var buildCommand = cli.Command{
 	},
 }
 
+func read(r io.Reader, clicontext *cli.Context) ([][]byte, pb.Metadata, error) {
+	def, err := llb.ReadFrom(r)
+	if err != nil {
+		return nil, pb.Metadata{}, errors.Wrap(err, "failed to parse input")
+	}
+	var meta pb.Metadata // empty ATM
+	return def, meta, nil
+}
+
 func build(clicontext *cli.Context) error {
 	c, err := resolveClient(clicontext)
 	if err != nil {
@@ -69,8 +81,12 @@ func build(clicontext *cli.Context) error {
 		return errors.Wrap(err, "invalid local")
 	}
 
+	def, metadata, err := read(os.Stdin, clicontext)
+	if err != nil {
+		return err
+	}
 	eg.Go(func() error {
-		return c.Solve(ctx, os.Stdin, client.SolveOpt{
+		return c.Solve(ctx, def, metadata, client.SolveOpt{
 			Exporter:      clicontext.String("exporter"),
 			ExporterAttrs: exporterAttrs,
 			LocalDirs:     localDirs,

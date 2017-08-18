@@ -11,7 +11,6 @@ import (
 	"time"
 
 	controlapi "github.com/moby/buildkit/api/services/control"
-	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
@@ -29,17 +28,12 @@ type SolveOpt struct {
 	// Session string
 }
 
-func (c *Client) Solve(ctx context.Context, r io.Reader, opt SolveOpt, statusChan chan *SolveStatus) error {
+func (c *Client) Solve(ctx context.Context, def [][]byte, metadata pb.Metadata, opt SolveOpt, statusChan chan *SolveStatus) error {
 	defer func() {
 		if statusChan != nil {
 			close(statusChan)
 		}
 	}()
-
-	def, err := llb.ReadFrom(r)
-	if err != nil {
-		return errors.Wrap(err, "failed to parse input")
-	}
 
 	if len(def) == 0 {
 		return errors.New("invalid empty definition")
@@ -87,11 +81,12 @@ func (c *Client) Solve(ctx context.Context, r io.Reader, opt SolveOpt, statusCha
 			s.Close()
 		}()
 		_, err = c.controlClient().Solve(ctx, &controlapi.SolveRequest{
-			Ref:           ref,
-			Definition:    def,
-			Exporter:      opt.Exporter,
-			ExporterAttrs: opt.ExporterAttrs,
-			Session:       s.ID(),
+			Ref:                ref,
+			Definition:         def,
+			Exporter:           opt.Exporter,
+			ExporterAttrs:      opt.ExporterAttrs,
+			Session:            s.ID(),
+			DefinitionMetadata: &metadata,
 		})
 		if err != nil {
 			return errors.Wrap(err, "failed to solve")

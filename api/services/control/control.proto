@@ -4,6 +4,7 @@ package moby.buildkit.v1;
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 import "google/protobuf/timestamp.proto";
+import "github.com/moby/buildkit/solver/pb/ops.proto";
 
 option (gogoproto.sizer_all) = true;
 option (gogoproto.marshaler_all) = true;
@@ -42,6 +43,7 @@ message SolveRequest {
 	string Exporter = 3;
 	map<string, string> ExporterAttrs = 4;
 	string Session = 5;
+	pb.Metadata DefinitionMetadata = 6; // bytes?
 }
 
 message SolveResponse {

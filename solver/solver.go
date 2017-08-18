@@ -97,7 +97,7 @@ func (s *Solver) Solve(ctx context.Context, id string, v Vertex, exp exporter.Ex
 	solveVertex := vv
 
 	if exp != nil {
-		vv = &vertex{digest: origVertex.Digest(), name: exp.Name()}
+		vv = &vertex{digest: origVertex.Digest(), name: exp.Name(), sysMetadata: origVertex.SysMetadata()}
 		vv.inputs = []*input{{index: 0, vertex: solveVertex}}
 		vv.initClientVertex()
 	}
