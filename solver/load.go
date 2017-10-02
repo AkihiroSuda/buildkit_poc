@@ -40,8 +40,8 @@ func loadInternalVertexHelper(v Vertex, cache map[digest.Digest]*vertex) *vertex
 	return vtx
 }
 
-func loadLLB(ops [][]byte, fn func(digest.Digest, *pb.Op, func(digest.Digest) (interface{}, error)) (interface{}, error)) (interface{}, Index, error) {
-	if len(ops) == 0 {
+func loadLLB(def pb.Definition, fn func(digest.Digest, *pb.Op, func(digest.Digest) (interface{}, error)) (interface{}, error)) (interface{}, Index, error) {
+	if len(def.Def) == 0 {
 		return nil, 0, errors.New("invalid empty definition")
 	}
 
@@ -49,7 +49,7 @@ func loadLLB(ops [][]byte, fn func(digest.Digest, *pb.Op, func(digest.Digest) (i
 
 	var dgst digest.Digest
 
-	for _, dt := range ops {
+	for _, dt := range def.Def {
 		var op pb.Op
 		if err := (&op).Unmarshal(dt); err != nil {
 			return nil, 0, errors.Wrap(err, "failed to parse llb proto op")
