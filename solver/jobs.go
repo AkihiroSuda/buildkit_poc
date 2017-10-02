@@ -52,7 +52,11 @@ func (jl *jobList) new(ctx context.Context, id string, pr progress.Reader, cache
 	pw, _, _ := progress.FromContext(ctx) // TODO: remove this
 	sid := session.FromContext(ctx)
 
-	j := &job{l: jl, pr: progress.NewMultiReader(pr), pw: pw, session: sid, cache: cache}
+	invalidatableCache := &invalidatableInstructionCache{
+		InstructionCache: cache,
+		invalidated:      make(map[digest.Digest]struct{}, 0),
+	}
+	j := &job{l: jl, pr: progress.NewMultiReader(pr), pw: pw, session: sid, cache: invalidatableCache}
 	jl.refs[id] = j
 	jl.updateCond.Broadcast()
 	go func() {
@@ -91,7 +95,7 @@ func (jl *jobList) get(id string) (*job, error) {
 	}
 }
 
-func (jl *jobList) loadAndSolve(ctx context.Context, dgst digest.Digest, ops [][]byte, f ResolveOpFunc, cache InstructionCache) (Reference, error) {
+func (jl *jobList) loadAndSolve(ctx context.Context, dgst digest.Digest, def pb.Definition, f ResolveOpFunc, cache InstructionCache) (Reference, error) {
 	jl.mu.Lock()
 
 	st, ok := jl.actives[dgst]
@@ -103,7 +107,7 @@ func (jl *jobList) loadAndSolve(ctx context.Context, dgst digest.Digest, ops [][
 	var inp *Input
 	for j := range st.jobs {
 		var err error
-		inp, err = j.loadInternal(ops, f)
+		inp, err = j.loadInternal(def, f)
 		if err != nil {
 			jl.mu.Unlock()
 			return nil, err
@@ -115,23 +119,58 @@ func (jl *jobList) loadAndSolve(ctx context.Context, dgst digest.Digest, ops [][
 	return getRef(st.solver, ctx, inp.Vertex.(*vertex), inp.Index, cache) // TODO: combine to pass single input
 }
 
+// invalidatableInstructionCache is expected to be created for the each of the jobs.
+// invalidation is typically happen when OpMetadata.IgnoreCache is set.
+type invalidatableInstructionCache struct {
+	InstructionCache
+	invalidated map[digest.Digest]struct{}
+}
+
+// Invalidate is not locked by any mutex.
+// Should be only called during job.load().
+func (c *invalidatableInstructionCache) Invalidate(key digest.Digest) {
+	c.invalidated[key] = struct{}{}
+}
+
+// Probe implements InstructionCache
+func (c *invalidatableInstructionCache) Probe(ctx context.Context, key digest.Digest) (bool, error) {
+	if _, ok := c.invalidated[key]; ok {
+		logrus.Debugf("probe: %s is invalidated", key)
+		return false, nil
+	}
+	x, err := c.InstructionCache.Probe(ctx, key)
+	logrus.Debugf("probe: %s is NOT invalidated (%v, %v)", key, x, err)
+	return x, err
+}
+
+// Lookup implements InstructionCache
+func (c *invalidatableInstructionCache) Lookup(ctx context.Context, key digest.Digest) (interface{}, error) {
+	if _, ok := c.invalidated[key]; ok {
+		logrus.Debugf("lookup: %s is invalidated", key)
+		return nil, nil
+	}
+	x, err := c.InstructionCache.Lookup(ctx, key)
+	logrus.Debugf("lookup: %s is NOT invalidated (%+v, %v)", key, x, err)
+	return x, err
+}
+
 type job struct {
 	l       *jobList
 	pr      *progress.MultiReader
 	pw      progress.Writer
 	session string
-	cache   InstructionCache
+	cache   *invalidatableInstructionCache
 }
 
-func (j *job) load(ops [][]byte, resolveOp ResolveOpFunc) (*Input, error) {
+func (j *job) load(def pb.Definition, resolveOp ResolveOpFunc) (*Input, error) {
 	j.l.mu.Lock()
 	defer j.l.mu.Unlock()
 
-	return j.loadInternal(ops, resolveOp)
+	return j.loadInternal(def, resolveOp)
 }
 
-func (j *job) loadInternal(ops [][]byte, resolveOp ResolveOpFunc) (*Input, error) {
-	vtx, idx, err := loadLLB(ops, func(dgst digest.Digest, op *pb.Op, load func(digest.Digest) (interface{}, error)) (interface{}, error) {
+func (j *job) loadInternal(def pb.Definition, resolveOp ResolveOpFunc) (*Input, error) {
+	vtx, idx, err := loadLLB(def, func(dgst digest.Digest, op *pb.Op, load func(digest.Digest) (interface{}, error)) (interface{}, error) {
 		if st, ok := j.l.actives[dgst]; ok {
 			if vtx, ok := st.jobs[j]; ok {
 				return vtx, nil
@@ -155,7 +194,12 @@ func (j *job) loadInternal(ops [][]byte, resolveOp ResolveOpFunc) (*Input, error
 			ctx := progress.WithProgress(context.Background(), st.mpw)
 			ctx = session.NewContext(ctx, j.session) // TODO: support multiple
 
-			s, err := newVertexSolver(ctx, vtx, op, j.cache, j.getSolver)
+			opMetadata := def.Metadata[dgst]
+			if opMetadata.IgnoreCache {
+				logrus.Debugf("Invalidating cache key %s (%s)", dgst, vtx.name)
+				j.cache.Invalidate(dgst)
+			}
+			s, err := newVertexSolver(ctx, vtx, op, opMetadata, j.cache, j.getSolver)
 			if err != nil {
 				return nil, err
 			}
