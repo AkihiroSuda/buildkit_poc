@@ -183,7 +183,7 @@ func (s *Solver) subBuild(ctx context.Context, dgst digest.Digest, req SolveRequ
 	st = jl.actives[inp.Vertex.Digest()]
 	jl.mu.Unlock()
 
-	return getRef(st.solver, ctx, inp.Vertex.(*vertex), inp.Index, s.cache) // TODO: combine to pass single input
+	return getRef(st.solver, ctx, inp.Vertex.(*vertex), inp.Index, s.cache, time.Now()) // TODO: combine to pass single input
 }
 
 type VertexSolver interface {
@@ -214,12 +214,13 @@ type vertexSolver struct {
 	results        []digest.Digest
 	markCachedOnce sync.Once
 
-	signal *signal // used to notify that there are callers who need more data
+	signal     *signal // used to notify that there are callers who need more data
+	jobCreated time.Time
 }
 
 type resolveF func(digest.Digest) (VertexSolver, error)
 
-func newVertexSolver(ctx context.Context, v *vertex, op Op, c InstructionCache, resolve resolveF) (*vertexSolver, error) {
+func newVertexSolver(ctx context.Context, v *vertex, op Op, c InstructionCache, resolve resolveF, jobCreated time.Time) (*vertexSolver, error) {
 	inputs := make([]*vertexInput, len(v.inputs))
 	for i, in := range v.inputs {
 		s, err := resolve(in.vertex.digest)
@@ -237,13 +238,14 @@ func newVertexSolver(ctx context.Context, v *vertex, op Op, c InstructionCache, 
 		}
 	}
 	return &vertexSolver{
-		ctx:    ctx,
-		inputs: inputs,
-		v:      v,
-		cv:     v.clientVertex,
-		op:     op,
-		cache:  c,
-		signal: newSignaller(),
+		ctx:        ctx,
+		inputs:     inputs,
+		v:          v,
+		cv:         v.clientVertex,
+		op:         op,
+		cache:      c,
+		signal:     newSignaller(),
+		jobCreated: jobCreated,
 	}, nil
 }
 
@@ -403,7 +405,7 @@ func (vs *vertexSolver) run(ctx context.Context, signal func()) (retErr error) {
 
 						// check if current cache key is in cache
 						if len(inp.cacheKeys) > 0 {
-							ref, err := vs.cache.Lookup(ctx2, inp.cacheKeys[len(inp.cacheKeys)-1])
+							ref, err := lookupCache(vs.v, ctx2, vs.cache, inp.cacheKeys[len(inp.cacheKeys)-1], vs.jobCreated)
 							if err != nil {
 								return err
 							}

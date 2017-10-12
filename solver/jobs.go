@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/moby/buildkit/cache"
+	cachemdutil "github.com/moby/buildkit/cache/metadatautil"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/solver/pb"
@@ -53,7 +54,7 @@ func (jl *jobList) new(ctx context.Context, id string, pr progress.Reader, cache
 	pw, _, _ := progress.FromContext(ctx) // TODO: remove this
 	sid := session.FromContext(ctx)
 
-	j := &job{l: jl, pr: progress.NewMultiReader(pr), pw: pw, session: sid, cache: cache}
+	j := &job{l: jl, pr: progress.NewMultiReader(pr), pw: pw, session: sid, cache: cache, created: time.Now()}
 	jl.refs[id] = j
 	jl.updateCond.Broadcast()
 	go func() {
@@ -98,6 +99,7 @@ type job struct {
 	pw      progress.Writer
 	session string
 	cache   InstructionCache
+	created time.Time
 }
 
 func (j *job) load(def *pb.Definition, resolveOp ResolveOpFunc) (*Input, error) {
@@ -133,7 +135,7 @@ func (j *job) loadInternal(def *pb.Definition, resolveOp ResolveOpFunc) (*Input,
 			ctx := progress.WithProgress(context.Background(), st.mpw)
 			ctx = session.NewContext(ctx, j.session) // TODO: support multiple
 
-			s, err := newVertexSolver(ctx, vtx, op, j.cache, j.getSolver)
+			s, err := newVertexSolver(ctx, vtx, op, j.cache, j.getSolver, j.created)
 			if err != nil {
 				return nil, err
 			}
@@ -184,24 +186,40 @@ func (j *job) getRef(ctx context.Context, v *vertex, index Index) (cache.Ref, er
 	if err != nil {
 		return nil, err
 	}
-	return getRef(s, ctx, v, index, j.cache)
+	return getRef(s, ctx, v, index, j.cache, j.created)
 }
 
-func getRef(s VertexSolver, ctx context.Context, v *vertex, index Index, icache InstructionCache) (cache.Ref, error) {
-	if v.metadata != nil && v.metadata.GetIgnoreCache() {
-		logrus.Warnf("Unimplemented vertex metadata: IgnoreCache (%s, %s)", v.digest, v.name)
+func lookupCache(v *vertex, ctx context.Context, icache InstructionCache, key digest.Digest, jobCreated time.Time) (cache.Ref, error) {
+	r, err := icache.Lookup(ctx, key)
+	if err != nil {
+		return nil, err
 	}
+	if r == nil {
+		return nil, nil
+	}
+	ref := r.(cache.Ref)
+	cachedTime := cachemdutil.GetCreatedAt(ref.Metadata())
+	// if clock is non-monotonic, this comparison may cause false cache miss
+	if v.metadata != nil && v.metadata.GetIgnoreCache() && cachedTime.Before(jobCreated) {
+		logrus.Debugf("Ignoring cache %s, %s (cached at %v < %v)", v.digest, v.name, cachedTime, jobCreated)
+		ref.Release(ctx, cache.WithDidntUse())
+		return nil, err
+	}
+	return ref, nil
+}
+
+func getRef(s VertexSolver, ctx context.Context, v *vertex, index Index, icache InstructionCache, jobCreated time.Time) (cache.Ref, error) {
 	k, err := s.CacheKey(ctx, index)
 	if err != nil {
 		return nil, err
 	}
-	ref, err := icache.Lookup(ctx, k)
+	ref, err := lookupCache(v, ctx, icache, k, jobCreated)
 	if err != nil {
 		return nil, err
 	}
 	if ref != nil {
 		markCached(ctx, v.clientVertex)
-		return ref.(cache.Ref), nil
+		return ref, nil
 	}
 
 	ev, err := s.OutputEvaluator(index)
@@ -216,13 +234,13 @@ func getRef(s VertexSolver, ctx context.Context, v *vertex, index Index, icache 
 			return nil, err
 		}
 		if r.CacheKey != "" {
-			ref, err := icache.Lookup(ctx, r.CacheKey)
+			ref, err := lookupCache(v, ctx, icache, k, jobCreated)
 			if err != nil {
 				return nil, err
 			}
 			if ref != nil {
 				markCached(ctx, v.clientVertex)
-				return ref.(cache.Ref), nil
+				return ref, nil
 			}
 			continue
 		}
