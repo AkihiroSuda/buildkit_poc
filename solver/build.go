@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/docker/docker/pkg/symlink"
+	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
@@ -44,7 +45,7 @@ func (b *buildOp) CacheKey(ctx context.Context) (digest.Digest, error) {
 	return digest.FromBytes(dt), nil
 }
 
-func (b *buildOp) Run(ctx context.Context, inputs []Reference) (outputs []Reference, retErr error) {
+func (b *buildOp) Run(ctx context.Context, inputs []cache.Ref) (outputs []cache.Ref, retErr error) {
 	if b.op.Builder != pb.LLBBuilder {
 		return nil, errors.Errorf("only llb builder is currently allowed")
 	}
@@ -115,7 +116,7 @@ func (b *buildOp) Run(ctx context.Context, inputs []Reference) (outputs []Refere
 		return nil, err
 	}
 
-	return []Reference{newref}, err
+	return []cache.Ref{newref}, err
 }
 
 func (b *buildOp) ContentMask(context.Context) (digest.Digest, [][]string, error) {

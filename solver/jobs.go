@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/solver/pb"
@@ -178,7 +179,7 @@ func (j *job) getSolver(dgst digest.Digest) (VertexSolver, error) {
 	return st.solver, nil
 }
 
-func (j *job) getRef(ctx context.Context, v *vertex, index Index) (Reference, error) {
+func (j *job) getRef(ctx context.Context, v *vertex, index Index) (cache.Ref, error) {
 	s, err := j.getSolver(v.Digest())
 	if err != nil {
 		return nil, err
@@ -186,7 +187,7 @@ func (j *job) getRef(ctx context.Context, v *vertex, index Index) (Reference, er
 	return getRef(s, ctx, v, index, j.cache)
 }
 
-func getRef(s VertexSolver, ctx context.Context, v *vertex, index Index, cache InstructionCache) (Reference, error) {
+func getRef(s VertexSolver, ctx context.Context, v *vertex, index Index, icache InstructionCache) (cache.Ref, error) {
 	if v.metadata != nil && v.metadata.GetIgnoreCache() {
 		logrus.Warnf("Unimplemented vertex metadata: IgnoreCache (%s, %s)", v.digest, v.name)
 	}
@@ -194,13 +195,13 @@ func getRef(s VertexSolver, ctx context.Context, v *vertex, index Index, cache I
 	if err != nil {
 		return nil, err
 	}
-	ref, err := cache.Lookup(ctx, k)
+	ref, err := icache.Lookup(ctx, k)
 	if err != nil {
 		return nil, err
 	}
 	if ref != nil {
 		markCached(ctx, v.clientVertex)
-		return ref.(Reference), nil
+		return ref.(cache.Ref), nil
 	}
 
 	ev, err := s.OutputEvaluator(index)
@@ -215,17 +216,17 @@ func getRef(s VertexSolver, ctx context.Context, v *vertex, index Index, cache I
 			return nil, err
 		}
 		if r.CacheKey != "" {
-			ref, err := cache.Lookup(ctx, r.CacheKey)
+			ref, err := icache.Lookup(ctx, r.CacheKey)
 			if err != nil {
 				return nil, err
 			}
 			if ref != nil {
 				markCached(ctx, v.clientVertex)
-				return ref.(Reference), nil
+				return ref.(cache.Ref), nil
 			}
 			continue
 		}
-		return r.Reference, nil
+		return r.Ref, nil
 	}
 }
 

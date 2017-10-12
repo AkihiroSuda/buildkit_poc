@@ -53,11 +53,6 @@ func NewLLBSolver(opt LLBOpt) *Solver {
 // ResolveOpFunc finds an Op implementation for a vertex
 type ResolveOpFunc func(Vertex) (Op, error)
 
-// Reference is a reference to the object passed through the build steps.
-type Reference interface {
-	Release(context.Context) error
-}
-
 // Op is an implementation for running a vertex
 type Op interface {
 	// CacheKey returns a persistent cache key for operation.
@@ -67,7 +62,7 @@ type Op interface {
 	// content based cache key.
 	ContentMask(context.Context) (digest.Digest, [][]string, error)
 	// Run runs an operation and returns the output references.
-	Run(ctx context.Context, inputs []Reference) (outputs []Reference, err error)
+	Run(ctx context.Context, inputs []cache.Ref) (outputs []cache.Ref, err error)
 }
 
 type InstructionCache interface {
@@ -99,7 +94,7 @@ type SolveRequest struct {
 	FrontendOpt map[string]string
 }
 
-func (s *Solver) solve(ctx context.Context, j *job, req SolveRequest) (Reference, map[string][]byte, error) {
+func (s *Solver) solve(ctx context.Context, j *job, req SolveRequest) (cache.Ref, map[string][]byte, error) {
 	if req.Definition == nil {
 		if req.Frontend == nil {
 			return nil, nil, errors.Errorf("invalid request: no definition nor frontend")
@@ -167,7 +162,7 @@ func (s *Solver) Status(ctx context.Context, id string, statusChan chan *client.
 	return j.pipe(ctx, statusChan)
 }
 
-func (s *Solver) subBuild(ctx context.Context, dgst digest.Digest, req SolveRequest) (Reference, error) {
+func (s *Solver) subBuild(ctx context.Context, dgst digest.Digest, req SolveRequest) (cache.Ref, error) {
 	jl := s.jobs
 	jl.mu.Lock()
 	st, ok := jl.actives[dgst]
@@ -201,7 +196,7 @@ type vertexInput struct {
 	solver    VertexSolver
 	ev        VertexEvaluator
 	cacheKeys []digest.Digest
-	ref       Reference
+	ref       cache.Ref
 }
 
 type vertexSolver struct {
@@ -413,7 +408,7 @@ func (vs *vertexSolver) run(ctx context.Context, signal func()) (retErr error) {
 								return err
 							}
 							if ref != nil {
-								inp.ref = ref.(Reference)
+								inp.ref = ref.(cache.Ref)
 								inp.solver.(*vertexSolver).markCachedOnce.Do(func() {
 									markCached(ctx, inp.solver.(*vertexSolver).cv)
 								})
@@ -429,7 +424,7 @@ func (vs *vertexSolver) run(ctx context.Context, signal func()) (retErr error) {
 						if res == nil { // there is no more data coming
 							return nil
 						}
-						if ref := res.Reference; ref != nil {
+						if ref := res.Ref; ref != nil {
 							if ref, ok := toImmutableRef(ref); ok {
 								if !cache.HasCachePolicyRetain(ref) {
 									if err := cache.CachePolicyRetain(ref); err != nil {
@@ -472,7 +467,7 @@ func (vs *vertexSolver) run(ctx context.Context, signal func()) (retErr error) {
 	}
 
 	// Find extra cache keys by content
-	inputRefs := make([]Reference, len(vs.inputs))
+	inputRefs := make([]cache.Ref, len(vs.inputs))
 	lastInputKeys := make([]digest.Digest, len(vs.inputs))
 	for i := range vs.inputs {
 		inputRefs[i] = vs.inputs[i].ref
@@ -573,7 +568,7 @@ func getInputContentHash(ctx context.Context, ref cache.ImmutableRef, selectors 
 	return digest.FromBytes(dt), nil
 }
 
-func calculateContentHash(ctx context.Context, refs []Reference, mainDigest digest.Digest, inputs []digest.Digest, contentMap [][]string) (digest.Digest, error) {
+func calculateContentHash(ctx context.Context, refs []cache.Ref, mainDigest digest.Digest, inputs []digest.Digest, contentMap [][]string) (digest.Digest, error) {
 	dgsts := make([]digest.Digest, len(contentMap))
 	eg, ctx := errgroup.WithContext(ctx)
 	for i, sel := range contentMap {
@@ -629,7 +624,7 @@ func (ve *vertexEvaluator) Next(ctx context.Context) (*VertexResult, error) {
 		ve.mu.Lock()
 		defer ve.mu.Unlock()
 		if ve.refs != nil {
-			return &VertexResult{Reference: ve.refs[int(ve.index)].Clone()}, nil
+			return &VertexResult{Ref: ve.refs[int(ve.index)].Clone()}, nil
 		}
 		if i := ve.cursor; i < len(ve.results) {
 			ve.cursor++
@@ -652,8 +647,8 @@ func (ve *vertexEvaluator) Cancel() error {
 }
 
 type VertexResult struct {
-	CacheKey  digest.Digest
-	Reference Reference
+	CacheKey digest.Digest
+	Ref      cache.Ref
 }
 
 // llbBridge is an helper used by frontends

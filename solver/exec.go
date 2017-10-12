@@ -49,9 +49,9 @@ func (e *execOp) CacheKey(ctx context.Context) (digest.Digest, error) {
 	return digest.FromBytes(dt), nil
 }
 
-func (e *execOp) Run(ctx context.Context, inputs []Reference) ([]Reference, error) {
+func (e *execOp) Run(ctx context.Context, inputs []cache.Ref) ([]cache.Ref, error) {
 	var mounts []worker.Mount
-	var outputs []Reference
+	var outputs []cache.Ref
 	var root cache.Mountable
 
 	defer func() {
@@ -114,7 +114,7 @@ func (e *execOp) Run(ctx context.Context, inputs []Reference) ([]Reference, erro
 		return nil, errors.Wrapf(err, "worker failed running %v", meta.Args)
 	}
 
-	refs := []Reference{}
+	refs := []cache.Ref{}
 	for i, o := range outputs {
 		if mutable, ok := o.(cache.MutableRef); ok {
 			ref, err := mutable.Commit(ctx)
