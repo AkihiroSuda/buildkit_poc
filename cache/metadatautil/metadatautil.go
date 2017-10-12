@@ -1,4 +1,5 @@
-package cache
+// Package metadatautil provides getter and setter methods for metadata
+package metadatautil
 
 import (
 	"time"
@@ -15,7 +16,7 @@ import (
 // Descr
 // CachePolicy
 
-const sizeUnknown int64 = -1
+const SizeUnknown int64 = -1
 const keySize = "snapshot.size"
 const keyEqualMutable = "cache.equalMutable"
 const keyCachePolicy = "cache.cachePolicy"
@@ -24,7 +25,14 @@ const keyCreatedAt = "cache.createdAt"
 const keyLastUsedAt = "cache.lastUsedAt"
 const keyUsageCount = "cache.usageCount"
 
-func setSize(si *metadata.StorageItem, s int64) error {
+type CachePolicy int
+
+const (
+	CachePolicyDefault CachePolicy = iota
+	CachePolicyRetain
+)
+
+func SetSize(si *metadata.StorageItem, s int64) error {
 	v, err := metadata.NewValue(s)
 	if err != nil {
 		return errors.Wrap(err, "failed to create size value")
@@ -35,19 +43,19 @@ func setSize(si *metadata.StorageItem, s int64) error {
 	return nil
 }
 
-func getSize(si *metadata.StorageItem) int64 {
+func GetSize(si *metadata.StorageItem) int64 {
 	v := si.Get(keySize)
 	if v == nil {
-		return sizeUnknown
+		return SizeUnknown
 	}
 	var size int64
 	if err := v.Unmarshal(&size); err != nil {
-		return sizeUnknown
+		return SizeUnknown
 	}
 	return size
 }
 
-func getEqualMutable(si *metadata.StorageItem) string {
+func GetEqualMutable(si *metadata.StorageItem) string {
 	v := si.Get(keyEqualMutable)
 	if v == nil {
 		return ""
@@ -59,7 +67,7 @@ func getEqualMutable(si *metadata.StorageItem) string {
 	return str
 }
 
-func setEqualMutable(si *metadata.StorageItem, s string) error {
+func SetEqualMutable(si *metadata.StorageItem, s string) error {
 	v, err := metadata.NewValue(s)
 	if err != nil {
 		return errors.Wrapf(err, "failed to create %s meta value", keyEqualMutable)
@@ -70,14 +78,14 @@ func setEqualMutable(si *metadata.StorageItem, s string) error {
 	return nil
 }
 
-func clearEqualMutable(si *metadata.StorageItem) error {
+func ClearEqualMutable(si *metadata.StorageItem) error {
 	si.Queue(func(b *bolt.Bucket) error {
 		return si.SetValue(b, keyEqualMutable, nil)
 	})
 	return nil
 }
 
-func queueCachePolicy(si *metadata.StorageItem, p cachePolicy) error {
+func QueueCachePolicy(si *metadata.StorageItem, p CachePolicy) error {
 	v, err := metadata.NewValue(p)
 	if err != nil {
 		return errors.Wrap(err, "failed to create cachePolicy value")
@@ -88,19 +96,19 @@ func queueCachePolicy(si *metadata.StorageItem, p cachePolicy) error {
 	return nil
 }
 
-func getCachePolicy(si *metadata.StorageItem) cachePolicy {
+func GetCachePolicy(si *metadata.StorageItem) CachePolicy {
 	v := si.Get(keyCachePolicy)
 	if v == nil {
-		return cachePolicyDefault
+		return CachePolicyDefault
 	}
-	var p cachePolicy
+	var p CachePolicy
 	if err := v.Unmarshal(&p); err != nil {
-		return cachePolicyDefault
+		return CachePolicyDefault
 	}
 	return p
 }
 
-func queueDescription(si *metadata.StorageItem, descr string) error {
+func QueueDescription(si *metadata.StorageItem, descr string) error {
 	v, err := metadata.NewValue(descr)
 	if err != nil {
 		return errors.Wrap(err, "failed to create description value")
@@ -111,7 +119,7 @@ func queueDescription(si *metadata.StorageItem, descr string) error {
 	return nil
 }
 
-func getDescription(si *metadata.StorageItem) string {
+func GetDescription(si *metadata.StorageItem) string {
 	v := si.Get(keyDescription)
 	if v == nil {
 		return ""
@@ -123,7 +131,7 @@ func getDescription(si *metadata.StorageItem) string {
 	return str
 }
 
-func queueCreatedAt(si *metadata.StorageItem) error {
+func QueueCreatedAt(si *metadata.StorageItem) error {
 	v, err := metadata.NewValue(time.Now().UnixNano())
 	if err != nil {
 		return errors.Wrap(err, "failed to create createdAt value")
@@ -134,7 +142,7 @@ func queueCreatedAt(si *metadata.StorageItem) error {
 	return nil
 }
 
-func getCreatedAt(si *metadata.StorageItem) time.Time {
+func GetCreatedAt(si *metadata.StorageItem) time.Time {
 	v := si.Get(keyCreatedAt)
 	if v == nil {
 		return time.Time{}
@@ -146,7 +154,7 @@ func getCreatedAt(si *metadata.StorageItem) time.Time {
 	return time.Unix(tm/1e9, tm%1e9)
 }
 
-func getLastUsed(si *metadata.StorageItem) (int, *time.Time) {
+func GetLastUsed(si *metadata.StorageItem) (int, *time.Time) {
 	v := si.Get(keyUsageCount)
 	if v == nil {
 		return 0, nil
@@ -167,8 +175,8 @@ func getLastUsed(si *metadata.StorageItem) (int, *time.Time) {
 	return usageCount, &tm
 }
 
-func updateLastUsed(si *metadata.StorageItem) error {
-	count, _ := getLastUsed(si)
+func UpdateLastUsed(si *metadata.StorageItem) error {
+	count, _ := GetLastUsed(si)
 	count++
 
 	v, err := metadata.NewValue(count)

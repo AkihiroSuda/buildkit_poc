@@ -8,6 +8,7 @@ import (
 
 	cdsnapshot "github.com/containerd/containerd/snapshot"
 	"github.com/moby/buildkit/cache/metadata"
+	mdutil "github.com/moby/buildkit/cache/metadatautil"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/snapshot"
@@ -122,7 +123,7 @@ func (cm *cacheManager) load(ctx context.Context, id string, opts ...RefOption) 
 	}
 
 	md, _ := cm.md.Get(id)
-	if mutableID := getEqualMutable(md); mutableID != "" {
+	if mutableID := mdutil.GetEqualMutable(md); mutableID != "" {
 		mutable, err := cm.load(ctx, mutableID)
 		if err != nil {
 			return nil, err
@@ -277,15 +278,15 @@ func (cm *cacheManager) DiskUsage(ctx context.Context, opt client.DiskUsageInfo)
 			continue
 		}
 
-		usageCount, lastUsedAt := getLastUsed(cr.md)
+		usageCount, lastUsedAt := mdutil.GetLastUsed(cr.md)
 		c := &cacheUsageInfo{
 			refs:        len(cr.refs),
 			mutable:     cr.mutable,
-			size:        getSize(cr.md),
-			createdAt:   getCreatedAt(cr.md),
+			size:        mdutil.GetSize(cr.md),
+			createdAt:   mdutil.GetCreatedAt(cr.md),
 			usageCount:  usageCount,
 			lastUsedAt:  lastUsedAt,
-			description: getDescription(cr.md),
+			description: mdutil.GetDescription(cr.md),
 		}
 		if cr.parent != nil {
 			c.parent = cr.parent.ID()
@@ -336,7 +337,7 @@ func (cm *cacheManager) DiskUsage(ctx context.Context, opt client.DiskUsageInfo)
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for _, d := range du {
-		if d.Size == sizeUnknown {
+		if d.Size == mdutil.SizeUnknown {
 			func(d *client.UsageInfo) {
 				eg.Go(func() error {
 					ref, err := cm.Get(ctx, d.ID)
@@ -368,34 +369,27 @@ func IsLocked(err error) bool {
 
 type RefOption func(withMetadata) error
 
-type cachePolicy int
-
-const (
-	cachePolicyDefault cachePolicy = iota
-	cachePolicyRetain
-)
-
 type withMetadata interface {
 	Metadata() *metadata.StorageItem
 }
 
 func HasCachePolicyRetain(m withMetadata) bool {
-	return getCachePolicy(m.Metadata()) == cachePolicyRetain
+	return mdutil.GetCachePolicy(m.Metadata()) == mdutil.CachePolicyRetain
 }
 
 func CachePolicyRetain(m withMetadata) error {
-	return queueCachePolicy(m.Metadata(), cachePolicyRetain)
+	return mdutil.QueueCachePolicy(m.Metadata(), mdutil.CachePolicyRetain)
 }
 
 func WithDescription(descr string) RefOption {
 	return func(m withMetadata) error {
-		return queueDescription(m.Metadata(), descr)
+		return mdutil.QueueDescription(m.Metadata(), descr)
 	}
 }
 
 func initializeMetadata(m withMetadata, opts ...RefOption) error {
 	md := m.Metadata()
-	if tm := getCreatedAt(md); !tm.IsZero() {
+	if tm := mdutil.GetCreatedAt(md); !tm.IsZero() {
 		return nil
 	}
 
@@ -405,7 +399,7 @@ func initializeMetadata(m withMetadata, opts ...RefOption) error {
 		}
 	}
 
-	if err := queueCreatedAt(md); err != nil {
+	if err := mdutil.QueueCreatedAt(md); err != nil {
 		return err
 	}
 

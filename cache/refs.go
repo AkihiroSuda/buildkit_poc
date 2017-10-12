@@ -5,6 +5,7 @@ import (
 
 	"github.com/containerd/containerd/mount"
 	"github.com/moby/buildkit/cache/metadata"
+	mdutil "github.com/moby/buildkit/cache/metadatautil"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/flightcontrol"
 	"github.com/pkg/errors"
@@ -74,8 +75,8 @@ func (cr *cacheRecord) Size(ctx context.Context) (int64, error) {
 	// this expects that usage() is implemented lazily
 	s, err := cr.sizeG.Do(ctx, cr.ID(), func(ctx context.Context) (interface{}, error) {
 		cr.mu.Lock()
-		s := getSize(cr.md)
-		if s != sizeUnknown {
+		s := mdutil.GetSize(cr.md)
+		if s != mdutil.SizeUnknown {
 			cr.mu.Unlock()
 			return s, nil
 		}
@@ -89,7 +90,7 @@ func (cr *cacheRecord) Size(ctx context.Context) (int64, error) {
 			return s, errors.Wrapf(err, "failed to get usage for %s", cr.ID())
 		}
 		cr.mu.Lock()
-		setSize(cr.md, usage.Size)
+		mdutil.SetSize(cr.md, usage.Size)
 		if err := cr.md.Commit(); err != nil {
 			return s, err
 		}
@@ -188,7 +189,7 @@ func (sr *immutableRef) release(ctx context.Context) error {
 		sr.viewMount = nil
 	}
 
-	updateLastUsed(sr.md)
+	mdutil.UpdateLastUsed(sr.md)
 
 	delete(sr.refs, sr)
 
@@ -231,7 +232,7 @@ func (sr *cacheRecord) finalize(ctx context.Context) error {
 		}
 	}()
 	sr.equalMutable = nil
-	clearEqualMutable(sr.md)
+	mdutil.ClearEqualMutable(sr.md)
 	return sr.md.Commit()
 }
 
@@ -251,8 +252,8 @@ func (sr *mutableRef) commit(ctx context.Context) (ImmutableRef, error) {
 		md:           md,
 	}
 
-	if descr := getDescription(sr.md); descr != "" {
-		if err := queueDescription(md, descr); err != nil {
+	if descr := mdutil.GetDescription(sr.md); descr != "" {
+		if err := mdutil.QueueDescription(md, descr); err != nil {
 			return nil, err
 		}
 	}
@@ -267,8 +268,8 @@ func (sr *mutableRef) commit(ctx context.Context) (ImmutableRef, error) {
 		return nil, err
 	}
 
-	setSize(md, sizeUnknown)
-	setEqualMutable(md, sr.ID())
+	mdutil.SetSize(md, mdutil.SizeUnknown)
+	mdutil.SetEqualMutable(md, sr.ID())
 	if err := md.Commit(); err != nil {
 		return nil, err
 	}
@@ -300,10 +301,10 @@ func (sr *mutableRef) Release(ctx context.Context) error {
 
 func (sr *mutableRef) release(ctx context.Context) error {
 	delete(sr.refs, sr)
-	updateLastUsed(sr.md)
-	if getCachePolicy(sr.md) != cachePolicyRetain {
+	mdutil.UpdateLastUsed(sr.md)
+	if mdutil.GetCachePolicy(sr.md) != mdutil.CachePolicyRetain {
 		if sr.equalImmutable != nil {
-			if getCachePolicy(sr.equalImmutable.md) == cachePolicyRetain {
+			if mdutil.GetCachePolicy(sr.equalImmutable.md) == mdutil.CachePolicyRetain {
 				return nil
 			}
 			if err := sr.equalImmutable.remove(ctx, false); err != nil {
