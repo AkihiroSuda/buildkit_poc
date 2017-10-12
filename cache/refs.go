@@ -12,24 +12,25 @@ import (
 	"golang.org/x/net/context"
 )
 
-type ImmutableRef interface {
-	Mountable
+// Ref is a reference to cacheable objects.
+type Ref interface {
+	Mountable // TODO(AkihiroSuda): can we allow non-mountable refs?
 	ID() string
 	Release(context.Context) error
 	Size(ctx context.Context) (int64, error)
+	Metadata() *metadata.StorageItem
+}
+
+type ImmutableRef interface {
+	Ref
 	Parent() ImmutableRef
 	Finalize(ctx context.Context) error // Make sure reference is flushed to driver
-	Metadata() *metadata.StorageItem
 	// Prepare() / ChainID() / Meta()
 }
 
 type MutableRef interface {
-	Mountable
-	ID() string
+	Ref
 	Commit(context.Context) (ImmutableRef, error)
-	Release(context.Context) error
-	Size(ctx context.Context) (int64, error)
-	Metadata() *metadata.StorageItem
 }
 
 type Mountable interface {

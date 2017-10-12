@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
 	digest "github.com/opencontainers/go-digest"
@@ -85,7 +86,7 @@ func (s *sourceOp) CacheKey(ctx context.Context) (digest.Digest, error) {
 	return digest.FromBytes([]byte(sourceCacheType + ":" + k)), nil
 }
 
-func (s *sourceOp) Run(ctx context.Context, _ []Reference) ([]Reference, error) {
+func (s *sourceOp) Run(ctx context.Context, _ []cache.Ref) ([]cache.Ref, error) {
 	src, err := s.instance(ctx)
 	if err != nil {
 		return nil, err
@@ -94,7 +95,7 @@ func (s *sourceOp) Run(ctx context.Context, _ []Reference) ([]Reference, error) 
 	if err != nil {
 		return nil, err
 	}
-	return []Reference{ref}, nil
+	return []cache.Ref{ref}, nil
 }
 
 func (s *sourceOp) ContentMask(context.Context) (digest.Digest, [][]string, error) {
