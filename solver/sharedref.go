@@ -33,8 +33,8 @@ func (mr *sharedRef) Clone() cache.Ref {
 	return r
 }
 
-func (mr *sharedRef) Release(ctx context.Context) error {
-	return mr.main.Release(ctx)
+func (mr *sharedRef) Release(ctx context.Context, opts ...cache.ReleaseOpt) error {
+	return mr.main.Release(ctx, opts...)
 }
 
 func (mr *sharedRef) Sys() cache.Ref {
@@ -51,12 +51,12 @@ type sharedRefInstance struct {
 	*sharedRef
 }
 
-func (r *sharedRefInstance) Release(ctx context.Context) error {
+func (r *sharedRefInstance) Release(ctx context.Context, opts ...cache.ReleaseOpt) error {
 	r.sharedRef.mu.Lock()
 	defer r.sharedRef.mu.Unlock()
 	delete(r.sharedRef.refs, r)
 	if len(r.sharedRef.refs) == 0 {
-		return r.sharedRef.Ref.Release(ctx)
+		return r.sharedRef.Ref.Release(ctx, opts...)
 	}
 	return nil
 }
@@ -81,9 +81,9 @@ func toImmutableRef(ref cache.Ref) (cache.ImmutableRef, bool) {
 
 type immutableRef struct {
 	cache.ImmutableRef
-	release func(context.Context) error
+	release func(context.Context, ...cache.ReleaseOpt) error
 }
 
-func (ir *immutableRef) Release(ctx context.Context) error {
-	return ir.release(ctx)
+func (ir *immutableRef) Release(ctx context.Context, opts ...cache.ReleaseOpt) error {
+	return ir.release(ctx, opts...)
 }

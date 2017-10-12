@@ -13,11 +13,27 @@ import (
 	"golang.org/x/net/context"
 )
 
+type releaseOpts struct {
+	didntUse bool
+}
+
+// ReleaseOpt allows the caller to specify release specific options
+type ReleaseOpt func(o *releaseOpts) error
+
+// WithDidntUse denotes that the caller is going to release the reference
+// but didn't use the reference.
+func WithDidntUse() ReleaseOpt {
+	return func(opts *releaseOpts) error {
+		opts.didntUse = true
+		return nil
+	}
+}
+
 // Ref is a reference to cacheable objects.
 type Ref interface {
 	Mountable // TODO(AkihiroSuda): can we allow non-mountable refs?
 	ID() string
-	Release(context.Context) error
+	Release(context.Context, ...ReleaseOpt) error
 	Size(ctx context.Context) (int64, error)
 	Metadata() *metadata.StorageItem
 }
@@ -170,17 +186,23 @@ type mutableRef struct {
 	*cacheRecord
 }
 
-func (sr *immutableRef) Release(ctx context.Context) error {
+func (sr *immutableRef) Release(ctx context.Context, opts ...ReleaseOpt) error {
 	sr.cm.mu.Lock()
 	defer sr.cm.mu.Unlock()
 
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 
-	return sr.release(ctx)
+	return sr.release(ctx, opts...)
 }
 
-func (sr *immutableRef) release(ctx context.Context) error {
+func (sr *immutableRef) release(ctx context.Context, opts ...ReleaseOpt) error {
+	var ropts releaseOpts
+	for _, o := range opts {
+		if err := o(&ropts); err != nil {
+			return err
+		}
+	}
 	if sr.viewMount != nil {
 		if err := sr.cm.Snapshotter.Remove(ctx, sr.view); err != nil {
 			return err
@@ -189,13 +211,15 @@ func (sr *immutableRef) release(ctx context.Context) error {
 		sr.viewMount = nil
 	}
 
-	mdutil.UpdateLastUsed(sr.md)
+	if !ropts.didntUse {
+		mdutil.UpdateLastUsed(sr.md)
+	}
 
 	delete(sr.refs, sr)
 
 	if len(sr.refs) == 0 {
 		if sr.equalMutable != nil {
-			sr.equalMutable.release(ctx)
+			sr.equalMutable.release(ctx, opts...)
 		}
 		// go sr.cm.GC()
 	}
@@ -289,17 +313,17 @@ func (sr *mutableRef) Commit(ctx context.Context) (ImmutableRef, error) {
 	return sr.commit(ctx)
 }
 
-func (sr *mutableRef) Release(ctx context.Context) error {
+func (sr *mutableRef) Release(ctx context.Context, opts ...ReleaseOpt) error {
 	sr.cm.mu.Lock()
 	defer sr.cm.mu.Unlock()
 
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 
-	return sr.release(ctx)
+	return sr.release(ctx, opts...)
 }
 
-func (sr *mutableRef) release(ctx context.Context) error {
+func (sr *mutableRef) release(ctx context.Context, opts ...ReleaseOpt) error {
 	delete(sr.refs, sr)
 	mdutil.UpdateLastUsed(sr.md)
 	if mdutil.GetCachePolicy(sr.md) != mdutil.CachePolicyRetain {
@@ -312,7 +336,7 @@ func (sr *mutableRef) release(ctx context.Context) error {
 			}
 		}
 		if sr.parent != nil {
-			if err := sr.parent.(*immutableRef).release(ctx); err != nil {
+			if err := sr.parent.(*immutableRef).release(ctx, opts...); err != nil {
 				return err
 			}
 		}
