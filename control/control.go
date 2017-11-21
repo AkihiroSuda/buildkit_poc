@@ -1,19 +1,15 @@
 package control
 
 import (
-	"github.com/containerd/containerd/snapshots"
 	"github.com/docker/distribution/reference"
 	controlapi "github.com/moby/buildkit/api/services/control"
-	"github.com/moby/buildkit/cache"
-	"github.com/moby/buildkit/cache/cacheimport"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/exporter"
 	"github.com/moby/buildkit/frontend"
+	"github.com/moby/buildkit/metaworker"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/grpchijack"
 	"github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/source"
-	"github.com/moby/buildkit/worker"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
@@ -22,17 +18,9 @@ import (
 )
 
 type Opt struct {
-	Snapshotter      snapshots.Snapshotter
-	CacheManager     cache.Manager
-	Worker           worker.Worker
-	SourceManager    *source.Manager
-	InstructionCache solver.InstructionCache
-	Exporters        map[string]exporter.Exporter
-	SessionManager   *session.Manager
-	Frontends        map[string]frontend.Frontend
-	ImageSource      source.Source
-	CacheExporter    *cacheimport.CacheExporter
-	CacheImporter    *cacheimport.CacheImporter
+	MetaWorkers []*metaworker.MetaWorker
+	Frontends   map[string]frontend.Frontend
+	// TODO: split more from metaworkers
 }
 
 type Controller struct { // TODO: ControlService
@@ -44,14 +32,8 @@ func NewController(opt Opt) (*Controller, error) {
 	c := &Controller{
 		opt: opt,
 		solver: solver.NewLLBSolver(solver.LLBOpt{
-			SourceManager:    opt.SourceManager,
-			CacheManager:     opt.CacheManager,
-			Worker:           opt.Worker,
-			InstructionCache: opt.InstructionCache,
-			ImageSource:      opt.ImageSource,
-			Frontends:        opt.Frontends,
-			CacheExporter:    opt.CacheExporter,
-			CacheImporter:    opt.CacheImporter,
+			MetaWorkers: opt.MetaWorkers,
+			Frontends:   opt.Frontends,
 		}),
 	}
 	return c, nil
@@ -63,7 +45,9 @@ func (c *Controller) Register(server *grpc.Server) error {
 }
 
 func (c *Controller) DiskUsage(ctx context.Context, r *controlapi.DiskUsageRequest) (*controlapi.DiskUsageResponse, error) {
-	du, err := c.opt.CacheManager.DiskUsage(ctx, client.DiskUsageInfo{
+	// FIXME mw0
+	mw0 := c.opt.MetaWorkers[0]
+	du, err := mw0.CacheManager.DiskUsage(ctx, client.DiskUsageInfo{
 		Filter: r.Filter,
 	})
 	if err != nil {
@@ -101,8 +85,10 @@ func (c *Controller) Solve(ctx context.Context, req *controlapi.SolveRequest) (*
 
 	var expi exporter.ExporterInstance
 	var err error
+	// FIXME mw0
+	mw0 := c.opt.MetaWorkers[0]
 	if req.Exporter != "" {
-		exp, ok := c.opt.Exporters[req.Exporter]
+		exp, ok := mw0.Exporters[req.Exporter]
 		if !ok {
 			return nil, errors.Errorf("exporter %q could not be found", req.Exporter)
 		}
@@ -202,7 +188,9 @@ func (c *Controller) Session(stream controlapi.Control_SessionServer) error {
 	logrus.Debugf("session started")
 	conn, opts := grpchijack.Hijack(stream)
 	defer conn.Close()
-	err := c.opt.SessionManager.HandleConn(stream.Context(), conn, opts)
+	// FIXME mw0
+	mw0 := c.opt.MetaWorkers[0]
+	err := mw0.SessionManager.HandleConn(stream.Context(), conn, opts)
 	logrus.Debugf("session finished: %v", err)
 	return err
 }

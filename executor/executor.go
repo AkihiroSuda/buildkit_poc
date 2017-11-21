@@ -1,4 +1,4 @@
-package worker
+package executor
 
 import (
 	"io"
@@ -23,7 +23,7 @@ type Mount struct {
 	Readonly bool
 }
 
-type Worker interface {
+type Executor interface {
 	// TODO: add stdout/err
 	Exec(ctx context.Context, meta Meta, rootfs cache.Mountable, mounts []Mount, stdin io.ReadCloser, stdout, stderr io.WriteCloser) error
 }

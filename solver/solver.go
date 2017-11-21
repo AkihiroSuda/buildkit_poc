@@ -11,13 +11,13 @@ import (
 	"github.com/moby/buildkit/cache/cacheimport"
 	"github.com/moby/buildkit/cache/contenthash"
 	"github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/exporter"
 	"github.com/moby/buildkit/frontend"
+	"github.com/moby/buildkit/metaworker"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/source"
 	"github.com/moby/buildkit/util/bgfunc"
 	"github.com/moby/buildkit/util/progress"
-	"github.com/moby/buildkit/worker"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -26,30 +26,27 @@ import (
 )
 
 type LLBOpt struct {
-	SourceManager    *source.Manager
-	CacheManager     cache.Manager
-	Worker           worker.Worker
-	InstructionCache InstructionCache
-	ImageSource      source.Source
-	Frontends        map[string]frontend.Frontend // used by nested invocations
-	CacheExporter    *cacheimport.CacheExporter
-	CacheImporter    *cacheimport.CacheImporter
+	// FIXME mw0
+	// multi-worker is not supported; the default one is always used.
+	MetaWorkers []*metaworker.MetaWorker
+	Frontends   map[string]frontend.Frontend // used by nested invocations
 }
 
 func NewLLBSolver(opt LLBOpt) *Solver {
 	var s *Solver
+	// FIXME mw0
 	s = New(func(v Vertex) (Op, error) {
 		switch op := v.Sys().(type) {
 		case *pb.Op_Source:
-			return newSourceOp(v, op, opt.SourceManager)
+			return newSourceOp(v, op, opt.MetaWorkers[0].SourceManager)
 		case *pb.Op_Exec:
-			return newExecOp(v, op, opt.CacheManager, opt.Worker)
+			return newExecOp(v, op, opt.MetaWorkers[0].CacheManager, opt.MetaWorkers[0].Executor)
 		case *pb.Op_Build:
 			return newBuildOp(v, op, s)
 		default:
 			return nil, nil
 		}
-	}, opt.InstructionCache, opt.ImageSource, opt.Worker, opt.CacheManager, opt.Frontends, opt.CacheExporter, opt.CacheImporter)
+	}, opt.MetaWorkers, opt.Frontends)
 	return s
 }
 
@@ -86,17 +83,14 @@ type InstructionCache interface {
 type Solver struct {
 	resolve     ResolveOpFunc
 	jobs        *jobList
-	cache       InstructionCache
-	imageSource source.Source
-	worker      worker.Worker
-	cm          cache.Manager // TODO: remove with immutableRef.New()
+	metaworkers []*metaworker.MetaWorker
 	frontends   map[string]frontend.Frontend
-	ce          *cacheimport.CacheExporter
-	ci          *cacheimport.CacheImporter
 }
 
-func New(resolve ResolveOpFunc, cache InstructionCache, imageSource source.Source, worker worker.Worker, cm cache.Manager, f map[string]frontend.Frontend, ce *cacheimport.CacheExporter, ci *cacheimport.CacheImporter) *Solver {
-	return &Solver{resolve: resolve, jobs: newJobList(), cache: cache, imageSource: imageSource, worker: worker, cm: cm, frontends: f, ce: ce, ci: ci}
+// FIXME mw0
+// multi-worker is not supported; the default one is always used.
+func New(resolve ResolveOpFunc, mw []*metaworker.MetaWorker, f map[string]frontend.Frontend) *Solver {
+	return &Solver{resolve: resolve, jobs: newJobList(), metaworkers: mw, frontends: f}
 }
 
 type SolveRequest struct {
@@ -125,7 +119,8 @@ func (s *Solver) solve(ctx context.Context, j *job, req SolveRequest) (Reference
 }
 
 func (s *Solver) llbBridge(j *job) *llbBridge {
-	return &llbBridge{job: j, Solver: s, resolveImageConfig: s.imageSource.(resolveImageConfig)}
+	// FIXME mw0
+	return &llbBridge{job: j, Solver: s, resolveImageConfig: s.metaworkers[0].ImageSource.(resolveImageConfig)}
 }
 
 func (s *Solver) Solve(ctx context.Context, id string, req SolveRequest) error {
@@ -135,16 +130,17 @@ func (s *Solver) Solve(ctx context.Context, id string, req SolveRequest) error {
 	pr, ctx, closeProgressWriter := progress.NewContext(ctx)
 	defer closeProgressWriter()
 
+	// FIXME mw0
 	if importRef := req.ImportCacheRef; importRef != "" {
-		cache, err := s.ci.Import(ctx, importRef)
+		cache, err := s.metaworkers[0].CacheImporter.Import(ctx, importRef)
 		if err != nil {
 			return err
 		}
-		s.cache = mergeRemoteCache(s.cache, cache)
+		s.metaworkers[0].InstructionCache = mergeRemoteCache(s.metaworkers[0].InstructionCache, cache)
 	}
 
 	// register a build job. vertex needs to be loaded to a job to run
-	ctx, j, err := s.jobs.new(ctx, id, pr, s.cache)
+	ctx, j, err := s.jobs.new(ctx, id, pr, s.metaworkers[0].InstructionCache)
 	if err != nil {
 		return err
 	}
@@ -193,7 +189,8 @@ func (s *Solver) Solve(ctx context.Context, id string, req SolveRequest) error {
 				return err
 			}
 
-			return s.ce.Export(ctx, records, exportName)
+			// FIXME mw0
+			return s.metaworkers[0].CacheExporter.Export(ctx, records, exportName)
 		}); err != nil {
 			return err
 		}
@@ -232,7 +229,8 @@ func (s *Solver) subBuild(ctx context.Context, dgst digest.Digest, req SolveRequ
 	st = jl.actives[inp.Vertex.Digest()]
 	jl.mu.Unlock()
 
-	return getRef(ctx, st.solver, inp.Vertex.(*vertex), inp.Index, s.cache) // TODO: combine to pass single input                                        // TODO: export cache for subbuilds
+	//FIXME mw0
+	return getRef(ctx, st.solver, inp.Vertex.(*vertex), inp.Index, s.metaworkers[0].InstructionCache) // TODO: combine to pass single input                                        // TODO: export cache for subbuilds
 }
 
 type VertexSolver interface {
@@ -814,13 +812,15 @@ func (s *llbBridge) Solve(ctx context.Context, req frontend.SolveRequest) (cache
 	return immutable, exp, nil
 }
 
-func (s *llbBridge) Exec(ctx context.Context, meta worker.Meta, rootFS cache.ImmutableRef, stdin io.ReadCloser, stdout, stderr io.WriteCloser) error {
-	active, err := s.cm.New(ctx, rootFS)
+func (s *llbBridge) Exec(ctx context.Context, meta executor.Meta, rootFS cache.ImmutableRef, stdin io.ReadCloser, stdout, stderr io.WriteCloser) error {
+	// FIXME mw0
+	mw0 := s.metaworkers[0]
+	active, err := mw0.CacheManager.New(ctx, rootFS)
 	if err != nil {
 		return err
 	}
 	defer active.Release(context.TODO())
-	return s.worker.Exec(ctx, meta, active, nil, stdin, stdout, stderr)
+	return mw0.Executor.Exec(ctx, meta, active, nil, stdin, stdout, stderr)
 }
 
 func cacheKeyForIndex(dgst digest.Digest, index Index) digest.Digest {

@@ -74,6 +74,13 @@ message OpMetadata {
 	// Description can be used for keeping any text fields that builder doesn't parse
 	map<string, string> description = 2;  
 	// TODO: add worker constraint, etc.
+	WorkerConstraint worker_constraint = 3;
+}
+
+// WorkerConstraint is WIP. Will be changed.
+message WorkerConstraint {
+	string worker_name = 1; // e.g. "runc-overlay", "containerd-overlay", "containerd-btrfs"
+// TODO: distributed mode
 }
 
 // Definition is the LLB definition structure with per-vertex metadata entries

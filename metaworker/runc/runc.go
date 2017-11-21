@@ -1,6 +1,4 @@
-// +build standalone
-
-package control
+package runc
 
 import (
 	"context"
@@ -11,81 +9,85 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
 	"github.com/containerd/containerd/diff/walking"
-	"github.com/containerd/containerd/metadata"
+	ctdmetadata "github.com/containerd/containerd/metadata"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/namespaces"
 	ctdsnapshot "github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/overlay"
-	"github.com/moby/buildkit/worker/runcworker"
-	digest "github.com/opencontainers/go-digest"
+	"github.com/moby/buildkit/cache/metadata"
+	"github.com/moby/buildkit/executor/runcexecutor"
+	"github.com/moby/buildkit/metaworker"
+	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
 
-func NewStandalone(root string) (*Controller, error) {
+func NewMetaWorkerOpts(root string) ([]metaworker.MetaWorkerOpt, error) {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return nil, errors.Wrapf(err, "failed to create %s", root)
 	}
-
-	// TODO: take lock to make sure there are no duplicates
-
-	pd, err := newStandalonePullDeps(root)
+	runcOverlay, err := newRuncOverlay(root)
 	if err != nil {
 		return nil, err
 	}
-
-	opt, err := defaultControllerOpts(root, *pd)
-	if err != nil {
-		return nil, err
-	}
-
-	w, err := runcworker.New(filepath.Join(root, "runc"))
-	if err != nil {
-		return nil, err
-	}
-
-	opt.Worker = w
-
-	return NewController(*opt)
+	return []metaworker.MetaWorkerOpt{runcOverlay}, nil
 }
 
-func newStandalonePullDeps(root string) (*pullDeps, error) {
+func newRuncOverlay(root string) (metaworker.MetaWorkerOpt, error) {
+	var opt metaworker.MetaWorkerOpt
+	name := "runc-overlay"
+	root = filepath.Join(root, name)
+	if err := os.MkdirAll(root, 0700); err != nil {
+		return opt, err
+	}
+	md, err := metadata.NewStore(filepath.Join(root, name+"-metadata.db"))
+	if err != nil {
+		return opt, err
+	}
+	exe, err := runcexecutor.New(filepath.Join(root, "executor"))
+	if err != nil {
+		return opt, err
+	}
 	s, err := overlay.NewSnapshotter(filepath.Join(root, "snapshots"))
 	if err != nil {
-		return nil, err
+		return opt, err
 	}
 
 	c, err := local.NewStore(filepath.Join(root, "content"))
 	if err != nil {
-		return nil, err
+		return opt, err
 	}
 
 	db, err := bolt.Open(filepath.Join(root, "containerdmeta.db"), 0644, nil)
 	if err != nil {
-		return nil, err
+		return opt, err
 	}
 
-	mdb := metadata.NewDB(db, c, map[string]ctdsnapshot.Snapshotter{
+	mdb := ctdmetadata.NewDB(db, c, map[string]ctdsnapshot.Snapshotter{
 		"overlay": s,
 	})
 	if err := mdb.Init(context.TODO()); err != nil {
-		return nil, err
+		return opt, err
 	}
 
 	c = &nsContent{mdb.ContentStore()}
-
 	df, err := walking.NewWalkingDiff(c)
 	if err != nil {
-		return nil, err
+		return opt, err
 	}
 
 	// TODO: call mdb.GarbageCollect . maybe just inject it into nsSnapshotter.Remove and csContent.Delete
 
-	return &pullDeps{
-		Snapshotter:  &nsSnapshotter{mdb.Snapshotter("overlay")},
-		ContentStore: c,
-		Applier:      df,
-		Differ:       df,
-	}, nil
+	opt = metaworker.MetaWorkerOpt{
+		Name:            name,
+		MetadataStore:   md,
+		Executor:        exe,
+		BaseSnapshotter: &nsSnapshotter{mdb.Snapshotter("overlay")},
+		ContentStore:    c,
+		Applier:         df,
+		Differ:          df,
+		ImageStore:      nil, // explicitly
+	}
+	return opt, nil
 }
 
 // this should be supported by containerd. currently packages are unusable without wrapping

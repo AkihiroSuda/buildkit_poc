@@ -5,10 +5,16 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/containerd/containerd/sys"
 	"github.com/docker/go-connections/sockets"
+	"github.com/moby/buildkit/control"
+	"github.com/moby/buildkit/frontend"
+	"github.com/moby/buildkit/frontend/dockerfile"
+	"github.com/moby/buildkit/frontend/gateway"
+	"github.com/moby/buildkit/metaworker"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/moby/buildkit/util/appdefaults"
 	"github.com/moby/buildkit/util/profiler"
@@ -18,6 +24,12 @@ import (
 	"golang.org/x/net/context"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+)
+
+var (
+	appFlags []cli.Flag
+	// key: priority (+: less preferred, -: more preferred)
+	metaWorkerCtors = make(map[int]func(c *cli.Context, root string) ([]*metaworker.MetaWorker, error), 0)
 )
 
 func main() {
@@ -45,9 +57,14 @@ func main() {
 			Usage: "debugging address (eg. 0.0.0.0:6060)",
 			Value: "",
 		},
+		cli.StringFlag{
+			Name:  "default-worker",
+			Usage: "default worker name (eg. containerd-overlay)",
+			Value: "",
+		},
 	}
 
-	app.Flags = appendFlags(app.Flags)
+	app.Flags = append(app.Flags, appFlags...)
 
 	app.Action = func(c *cli.Context) error {
 		ctx, cancel := context.WithCancel(appcontext.Context())
@@ -178,4 +195,55 @@ func unaryInterceptor(globalCtx context.Context) grpc.ServerOption {
 		}
 		return
 	})
+}
+
+func newController(c *cli.Context, root string) (*control.Controller, error) {
+	mws, err := metaWorkers(c, root)
+	if err != nil {
+		return nil, err
+	}
+	frontends := map[string]frontend.Frontend{}
+	frontends["dockerfile.v0"] = dockerfile.NewDockerfileFrontend()
+	frontends["gateway.v0"] = gateway.NewGatewayFrontend()
+	return control.NewController(control.Opt{
+		MetaWorkers: mws,
+		Frontends:   frontends,
+	})
+}
+
+func metaWorkers(c *cli.Context, root string) ([]*metaworker.MetaWorker, error) {
+	defaultWorkerName := c.GlobalString("default-worker")
+	type ctorEntry struct {
+		priority int
+		ctor     func(c *cli.Context, root string) ([]*metaworker.MetaWorker, error)
+	}
+	var ctors []ctorEntry
+	for p, ctor := range metaWorkerCtors {
+		ctors = append(ctors, ctorEntry{priority: p, ctor: ctor})
+	}
+	sort.Slice(ctors, func(i, j int) bool { return ctors[i].priority < ctors[j].priority })
+	var ret []*metaworker.MetaWorker
+	for _, e := range ctors {
+		mws, err := e.ctor(c, root)
+		if err != nil {
+			return ret, err
+		}
+		for _, mw := range mws {
+			logrus.Infof("Found worker %q", mw.Name)
+			ret = append(ret, mw)
+			if defaultWorkerName == mw.Name {
+				last := len(ret) - 1
+				ret[0], ret[last] = ret[last], ret[0]
+			}
+		}
+	}
+	if len(ret) == 0 {
+		return nil, errors.New("no worker found, build the buildkit daemon with tags? (e.g. \"standalone\", \"containerd\")")
+	}
+	if defaultWorkerName != "" && defaultWorkerName != ret[0].Name {
+		return nil, errors.Errorf("worker %q not found", defaultWorkerName)
+	}
+	logrus.Infof("Found %d workers, default=%q", len(ret), ret[0].Name)
+	logrus.Warn("Currently, only the default worker can be used.")
+	return ret, nil
 }
