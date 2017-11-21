@@ -8,6 +8,7 @@ import (
 
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
+	"github.com/moby/buildkit/worker"
 	digest "github.com/opencontainers/go-digest"
 	"golang.org/x/net/context"
 )
@@ -21,7 +22,8 @@ type sourceOp struct {
 	src source.SourceInstance
 }
 
-func newSourceOp(_ Vertex, op *pb.Op_Source, sm *source.Manager) (Op, error) {
+func newSourceOp(_ Vertex, op *pb.Op_Source, w *worker.Worker) (Op, error) {
+	sm := w.SourceManager
 	return &sourceOp{
 		op: op,
 		sm: sm,

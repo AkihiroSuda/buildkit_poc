@@ -1,4 +1,4 @@
-package containerdworker
+package containerdexecutor
 
 import (
 	"io"
@@ -6,24 +6,24 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/moby/buildkit/cache"
+	"github.com/moby/buildkit/executor"
+	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/identity"
-	"github.com/moby/buildkit/worker"
-	"github.com/moby/buildkit/worker/oci"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 )
 
-type containerdWorker struct {
+type containerdExecutor struct {
 	client *containerd.Client
 }
 
-func New(client *containerd.Client) worker.Worker {
-	return containerdWorker{
+func New(client *containerd.Client) executor.Executor {
+	return containerdExecutor{
 		client: client,
 	}
 }
 
-func (w containerdWorker) Exec(ctx context.Context, meta worker.Meta, root cache.Mountable, mounts []worker.Mount, stdin io.ReadCloser, stdout, stderr io.WriteCloser) error {
+func (w containerdExecutor) Exec(ctx context.Context, meta executor.Meta, root cache.Mountable, mounts []executor.Mount, stdin io.ReadCloser, stdout, stderr io.WriteCloser) error {
 	id := identity.NewID()
 
 	spec, cleanup, err := oci.GenerateSpec(ctx, meta, mounts, id)

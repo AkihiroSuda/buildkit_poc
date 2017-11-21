@@ -5,19 +5,32 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/containerd/containerd/sys"
 	"github.com/docker/go-connections/sockets"
+	"github.com/moby/buildkit/control"
+	"github.com/moby/buildkit/frontend"
+	"github.com/moby/buildkit/frontend/dockerfile"
+	"github.com/moby/buildkit/frontend/gateway"
+	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/moby/buildkit/util/appdefaults"
 	"github.com/moby/buildkit/util/profiler"
+	"github.com/moby/buildkit/worker"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"golang.org/x/net/context"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+)
+
+var (
+	appFlags []cli.Flag
+	// key: priority (+: less preferred, -: more preferred)
+	workerCtors = make(map[int]func(c *cli.Context, common *worker.CommonOpt, root string) ([]*worker.Worker, error), 0)
 )
 
 func main() {
@@ -47,7 +60,7 @@ func main() {
 		},
 	}
 
-	app.Flags = appendFlags(app.Flags)
+	app.Flags = append(app.Flags, appFlags...)
 
 	app.Action = func(c *cli.Context) error {
 		ctx, cancel := context.WithCancel(appcontext.Context())
@@ -178,4 +191,62 @@ func unaryInterceptor(globalCtx context.Context) grpc.ServerOption {
 		}
 		return
 	})
+}
+
+func newController(c *cli.Context, root string) (*control.Controller, error) {
+	sessionManager, err := session.NewManager()
+	if err != nil {
+		return nil, err
+	}
+	commonOpt := &worker.CommonOpt{
+		SessionManager: sessionManager,
+	}
+	wc, err := workerController(c, commonOpt, root)
+	if err != nil {
+		return nil, err
+	}
+	frontends := map[string]frontend.Frontend{}
+	frontends["dockerfile.v0"] = dockerfile.NewDockerfileFrontend()
+	frontends["gateway.v0"] = gateway.NewGatewayFrontend()
+	return control.NewController(control.Opt{
+		SessionManager:   sessionManager,
+		WorkerController: wc,
+		Frontends:        frontends,
+	})
+}
+
+func workerController(c *cli.Context, commonOpt *worker.CommonOpt, root string) (*worker.Controller, error) {
+	wc := &worker.Controller{}
+	type ctorEntry struct {
+		priority int
+		ctor     func(c *cli.Context, common *worker.CommonOpt, root string) ([]*worker.Worker, error)
+	}
+	var ctors []ctorEntry
+	for p, ctor := range workerCtors {
+		ctors = append(ctors, ctorEntry{priority: p, ctor: ctor})
+	}
+	sort.Slice(ctors, func(i, j int) bool { return ctors[i].priority < ctors[j].priority })
+	for _, e := range ctors {
+		ws, err := e.ctor(c, commonOpt, root)
+		if err != nil {
+			return nil, err
+		}
+		for _, w := range ws {
+			logrus.Infof("Found worker %q", w.Name)
+			if err = wc.Add(w); err != nil {
+				return nil, err
+			}
+		}
+	}
+	nWorkers := len(wc.GetAll())
+	if nWorkers == 0 {
+		return nil, errors.New("no worker found, build the buildkit daemon with tags? (e.g. \"standalone\", \"containerd\")")
+	}
+	defaultWorker, err := wc.GetDefault()
+	if err != nil {
+		return nil, err
+	}
+	logrus.Infof("Found %d workers, default=%q", nWorkers, defaultWorker.Name)
+	logrus.Warn("Currently, only the default worker can be used.")
+	return wc, nil
 }
