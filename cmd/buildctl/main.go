@@ -37,6 +37,7 @@ func main() {
 		diskUsageCommand,
 		buildCommand,
 		debugCommand,
+		budCommand,
 	}
 
 	var debugEnabled bool

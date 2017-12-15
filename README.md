@@ -27,20 +27,58 @@ Key features:
 
 Read the proposal from https://github.com/moby/moby/issues/32925
 
-#### Quick start
+#### Quick start for Docker users in 5 steps
+
+1. Install [runc](https://github.com/opencontainers/runc)
+
+2. Install `buildd` and `buildctl` to `/usr/local/bin`:
+
+```bash
+$ make && sudo make install
+```
+
+3. Start the BuildKit daemon `buildd`:
+```bash
+$ sudo buildd
+```
+
+4. Build your Dockerfile with BuildKit utility `buildctl build-using-dockerfile` (`buildctl bud`):
+
+```bash
+$ cd your-docker-app
+$ ls
+Dockerfile
+...
+$ sudo buildctl bud .
+$ ls
+Dockerfile
+oci.tar
+...
+```
+
+You can omit `sudo` if the user can access `/run/buildkit/buildd.sock`.
+
+5. Import the build artifact `oci.tar` to Docker:
+
+If you use [skopeo](https://github.com/projectatomic/skopeo):
+```bash
+$ mkdir tmp
+$ tar Cxvf tmp oci.tar
+$ skopeo copy oci:tmp docker-daemon:foo/bar:latest 
+```
+
+------------------------------
+
+## Advanced guide
+
+#### Installation and usage
 
 Dependencies:
 - [runc](https://github.com/opencontainers/runc)
 - [containerd](https://github.com/containerd/containerd) (if you want to use containerd worker)
 
 
-The following command installs `buildd` and `buildctl` to `/usr/local/bin`:
-
-```bash
-$ make && sudo make install
-```
-
-You can also use `make binaries-all` to prepare `buildd-containerd` (containerd worker only) and `buildd-standalone` (OCI worker only).
+In addition to `make`, you can also use `make binaries-all` to prepare `buildd-containerd` (containerd worker only) and `buildd-standalone` (OCI worker only).
 
 `examples/buildkit*` directory contains scripts that define how to build different configurations of BuildKit and its dependencies using the `client` package. Running one of these script generates a protobuf definition of a build graph. Note that the script itself does not execute any steps of the build.
 

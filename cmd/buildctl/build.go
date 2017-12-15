@@ -22,9 +22,10 @@ import (
 )
 
 var buildCommand = cli.Command{
-	Name:   "build",
-	Usage:  "build",
-	Action: build,
+	Name:        "build",
+	Usage:       "build",
+	Action:      build,
+	Description: `See also "buildctl build-using-dockerfile" ("buildctl bud") for building images from Dockerfile`,
 	Flags: []cli.Flag{
 		cli.StringFlag{
 			Name:  "exporter",
