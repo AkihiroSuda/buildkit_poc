@@ -28,7 +28,7 @@ type execOp struct {
 	numInputs int
 }
 
-func NewExecOp(v solver.Vertex, op *pb.Op_Exec, cm cache.Manager, exec executor.Executor) (*execOp, error) {
+func NewExecOp(v solver.Vertex, op *pb.Op_Exec, cm cache.Manager, exec executor.Executor) (solver.Op, error) {
 	return &execOp{
 		op:        op.Exec,
 		cm:        cm,

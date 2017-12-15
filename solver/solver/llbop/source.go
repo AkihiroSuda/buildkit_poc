@@ -22,7 +22,7 @@ type sourceOp struct {
 	src source.SourceInstance
 }
 
-func NewSourceOp(_ solver.Vertex, op *pb.Op_Source, sm *source.Manager) (*sourceOp, error) {
+func NewSourceOp(_ solver.Vertex, op *pb.Op_Source, sm *source.Manager) (solver.Op, error) {
 	return &sourceOp{
 		op: op,
 		sm: sm,
