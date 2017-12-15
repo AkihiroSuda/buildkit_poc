@@ -16,7 +16,7 @@ type buildOpt struct {
 
 func main() {
 	var opt buildOpt
-	flag.StringVar(&opt.target, "target", "containerd", "target (standalone, containerd)")
+	flag.StringVar(&opt.target, "target", "containerd_worker_only", "target (oci_worker_only, containerd_worker_only)")
 	flag.StringVar(&opt.containerd, "containerd", "v1.0.0", "containerd version")
 	flag.StringVar(&opt.runc, "runc", "74a17296470088de3805e138d3d87c62e613dfc4", "runc version")
 	flag.Parse()
@@ -66,9 +66,9 @@ func containerd(version string) llb.State {
 func buildkit(opt buildOpt) llb.State {
 	run := goRepo(goBuildBase(), "github.com/moby/buildkit", "master")
 
-	builddStandalone := run(llb.Shlex("go build -o ./bin/buildd-standalone -tags standalone ./cmd/buildd"))
+	builddOCIWorkerOnly := run(llb.Shlex("go build -o ./bin/buildd.oci_worker_only -tags no_containerd_worker ./cmd/buildd"))
 
-	builddContainerd := run(llb.Shlex("go build -o ./bin/buildd-containerd -tags containerd ./cmd/buildd"))
+	builddContainerdWorkerOnly := run(llb.Shlex("go build -o ./bin/buildd.containerd_worker_only -tags no_oci_worker ./cmd/buildd"))
 
 	buildctl := run(llb.Shlex("go build -o ./bin/buildctl ./cmd/buildctl"))
 
@@ -77,12 +77,12 @@ func buildkit(opt buildOpt) llb.State {
 		copyAll(runc(opt.runc), "/bin"),
 	)
 
-	if opt.target == "containerd" {
+	if opt.target == "containerd_worker_only" {
 		return r.With(
 			copyAll(containerd(opt.containerd), "/bin"),
-			copyAll(builddContainerd, "/bin"))
+			copyAll(builddContainerdWorkerOnly, "/bin"))
 	}
-	return r.With(copyAll(builddStandalone, "/bin"))
+	return r.With(copyAll(builddOCIWorkerOnly, "/bin"))
 }
 
 func copyAll(src llb.State, destPath string) llb.StateOption {
