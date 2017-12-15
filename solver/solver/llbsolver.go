@@ -1,11 +1,10 @@
-package llbsolver
+package solver
 
 import (
 	"github.com/moby/buildkit/frontend"
 	solver "github.com/moby/buildkit/solver"
-	llbop "github.com/moby/buildkit/solver/llbsolver/llbop"
 	"github.com/moby/buildkit/solver/pb"
-	pbsolver "github.com/moby/buildkit/solver/solver"
+	"github.com/moby/buildkit/solver/solver/llbop"
 	"github.com/moby/buildkit/worker"
 )
 
@@ -17,9 +16,9 @@ func DetermineVertexWorker(wc *worker.Controller, v solver.Vertex) (*worker.Work
 	return wc.GetDefault()
 }
 
-func New(wc *worker.Controller, frontends map[string]frontend.Frontend) *pbsolver.Solver {
-	var s *pbsolver.Solver
-	s = pbsolver.New(func(v solver.Vertex) (solver.Op, error) {
+func NewLLBOpSolver(wc *worker.Controller, frontends map[string]frontend.Frontend) solver.Solver {
+	var s *Solver
+	s = New(func(v solver.Vertex) (solver.Op, error) {
 		w, err := DetermineVertexWorker(wc, v)
 		if err != nil {
 			return nil, err
