@@ -97,6 +97,12 @@ func main() {
 			Name:  "tlscacert",
 			Usage: "ca certificate to verify clients",
 		},
+		cli.BoolFlag{
+			Name:  "rootless",
+			Usage: "execute without root privileges",
+			// TODO(AkihiroSuda): autodetect rootless mode
+			// TODO(AkihiroSuda): user-friendly help messages
+		},
 	}
 
 	app.Flags = append(app.Flags, appFlags...)

@@ -5,6 +5,7 @@ package main
 import (
 	"os/exec"
 
+	"github.com/moby/buildkit/executor/runcexecutor"
 	"github.com/moby/buildkit/worker"
 	"github.com/moby/buildkit/worker/base"
 	"github.com/moby/buildkit/worker/runc"
@@ -27,6 +28,11 @@ func init() {
 			Name:  "oci-worker-labels",
 			Usage: "user-specific annotation labels (com.example.foo=bar)",
 		},
+		cli.BoolTFlag{
+			Name:  "oci-worker-overlayfs",
+			Usage: "enable overlayfs snapshotter", // and differ when implemented
+			// TODO(AkihiroSuda): autodetect overlayfs availability?
+		},
 	)
 	// TODO: allow multiple oci runtimes and snapshotters
 }
@@ -43,7 +49,10 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 	if err != nil {
 		return nil, err
 	}
-	opt, err := runc.NewWorkerOpt(common.root, labels)
+	exeOpt := runcexecutor.Opt{
+		Rootless: c.GlobalBool("rootless"),
+	}
+	opt, err := runc.NewWorkerOpt(common.root, labels, c.GlobalBoolT("oci-worker-overlayfs"), &exeOpt)
 	if err != nil {
 		return nil, err
 	}

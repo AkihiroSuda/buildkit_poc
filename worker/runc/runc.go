@@ -10,6 +10,7 @@ import (
 	"github.com/containerd/containerd/diff/walking"
 	ctdmetadata "github.com/containerd/containerd/metadata"
 	ctdsnapshot "github.com/containerd/containerd/snapshots"
+	"github.com/containerd/containerd/snapshots/naive"
 	"github.com/containerd/containerd/snapshots/overlay"
 	"github.com/moby/buildkit/cache/metadata"
 	"github.com/moby/buildkit/executor/runcexecutor"
@@ -20,9 +21,15 @@ import (
 // NewWorkerOpt creates a WorkerOpt.
 // But it does not set the following fields:
 //  - SessionManager
-func NewWorkerOpt(root string, labels map[string]string) (base.WorkerOpt, error) {
+func NewWorkerOpt(root string, labels map[string]string, overlayfs bool, exeOpt *runcexecutor.Opt) (base.WorkerOpt, error) {
+	snapshotterName := "naive"
+	snapshotterNew := naive.NewSnapshotter
+	if overlayfs {
+		snapshotterName = "overlayfs"
+		snapshotterNew = overlay.NewSnapshotter
+	}
 	var opt base.WorkerOpt
-	name := "runc-overlayfs"
+	name := "runc-" + snapshotterName
 	root = filepath.Join(root, name)
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return opt, err
@@ -31,11 +38,11 @@ func NewWorkerOpt(root string, labels map[string]string) (base.WorkerOpt, error)
 	if err != nil {
 		return opt, err
 	}
-	exe, err := runcexecutor.New(filepath.Join(root, "executor"))
+	exe, err := runcexecutor.New(filepath.Join(root, "executor"), exeOpt)
 	if err != nil {
 		return opt, err
 	}
-	s, err := overlay.NewSnapshotter(filepath.Join(root, "snapshots"))
+	s, err := snapshotterNew(filepath.Join(root, "snapshots"))
 	if err != nil {
 		return opt, err
 	}
@@ -51,7 +58,7 @@ func NewWorkerOpt(root string, labels map[string]string) (base.WorkerOpt, error)
 	}
 
 	mdb := ctdmetadata.NewDB(db, c, map[string]ctdsnapshot.Snapshotter{
-		"overlayfs": s,
+		snapshotterName: s,
 	})
 	if err := mdb.Init(context.TODO()); err != nil {
 		return opt, err
@@ -72,7 +79,7 @@ func NewWorkerOpt(root string, labels map[string]string) (base.WorkerOpt, error)
 	if err != nil {
 		return opt, err
 	}
-	xlabels := base.Labels("oci", "overlayfs")
+	xlabels := base.Labels("oci", snapshotterName)
 	for k, v := range labels {
 		xlabels[k] = v
 	}
@@ -81,7 +88,7 @@ func NewWorkerOpt(root string, labels map[string]string) (base.WorkerOpt, error)
 		Labels:        xlabels,
 		MetadataStore: md,
 		Executor:      exe,
-		Snapshotter:   containerdsnapshot.NewSnapshotter(mdb.Snapshotter("overlayfs"), c, md, "buildkit", gc),
+		Snapshotter:   containerdsnapshot.NewSnapshotter(mdb.Snapshotter(snapshotterName), c, md, "buildkit", gc),
 		ContentStore:  c,
 		Applier:       df,
 		Differ:        df,

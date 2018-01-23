@@ -52,6 +52,9 @@ func containerdWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([
 	if err != nil {
 		return nil, err
 	}
+	if c.GlobalBool("rootless") {
+		logrus.Warn("rootless mode is not supported for containerd workers")
+	}
 	opt, err := containerd.NewWorkerOpt(common.root, socket, ctd.DefaultSnapshotter, labels)
 	if err != nil {
 		return nil, err

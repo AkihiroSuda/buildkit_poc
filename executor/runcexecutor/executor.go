@@ -21,12 +21,17 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type Opt struct {
+	Rootless bool // execute runc without root privileges
+}
+
 type runcExecutor struct {
+	Opt
 	runc *runc.Runc
 	root string
 }
 
-func New(root string) (executor.Executor, error) {
+func New(root string, opt *Opt) (executor.Executor, error) {
 	if err := exec.Command("runc", "--version").Run(); err != nil {
 		return nil, errors.Wrap(err, "failed to find runc binary")
 	}
@@ -48,7 +53,12 @@ func New(root string) (executor.Executor, error) {
 		Setpgid:      true,
 	}
 
+	var xopt Opt
+	if opt != nil {
+		xopt = *opt
+	}
 	w := &runcExecutor{
+		Opt:  xopt,
 		runc: runtime,
 		root: root,
 	}
@@ -98,7 +108,11 @@ func (w *runcExecutor) Exec(ctx context.Context, meta executor.Meta, root cache.
 		return err
 	}
 	defer f.Close()
-	spec, cleanup, err := oci.GenerateSpec(ctx, meta, mounts, id, resolvConf, hostsFile, containerdoci.WithUIDGID(uid, gid))
+	specOpts := []containerdoci.SpecOpts{containerdoci.WithUIDGID(uid, gid)}
+	if w.Opt.Rootless {
+		specOpts = append(specOpts, oci.WithRootless)
+	}
+	spec, cleanup, err := oci.GenerateSpec(ctx, meta, mounts, id, resolvConf, hostsFile, specOpts...)
 	if err != nil {
 		return err
 	}
