@@ -12,10 +12,10 @@ import (
 	"github.com/containerd/containerd/diff"
 	"github.com/containerd/containerd/images"
 	"github.com/moby/buildkit/cache"
-	"github.com/moby/buildkit/cache/cacheimport"
 	"github.com/moby/buildkit/cache/instructioncache"
 	localcache "github.com/moby/buildkit/cache/instructioncache/local"
 	"github.com/moby/buildkit/cache/metadata"
+	trans "github.com/moby/buildkit/cache/transferable/contentstore"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/exporter"
@@ -64,8 +64,8 @@ type Worker struct {
 	cache         instructioncache.InstructionCache
 	Exporters     map[string]exporter.Exporter
 	ImageSource   source.Source
-	CacheExporter *cacheimport.CacheExporter // TODO: remove
-	CacheImporter *cacheimport.CacheImporter // TODO: remove
+	cacheImporter trans.Importer
+	cacheExporter trans.Exporter
 	// no frontend here
 }
 
@@ -181,19 +181,16 @@ func NewWorker(opt WorkerOpt) (*Worker, error) {
 	}
 	exporters[client.ExporterDocker] = dockerExporter
 
-	ce := cacheimport.NewCacheExporter(cacheimport.ExporterOpt{
-		Snapshotter:    opt.Snapshotter,
-		ContentStore:   opt.ContentStore,
-		SessionManager: opt.SessionManager,
-		Differ:         opt.Differ,
+	ce := trans.NewExporter(trans.ExporterOpt{
+		Snapshotter:  opt.Snapshotter,
+		ContentStore: opt.ContentStore,
+		Differ:       opt.Differ,
 	})
 
-	ci := cacheimport.NewCacheImporter(cacheimport.ImportOpt{
-		Snapshotter:    opt.Snapshotter,
-		ContentStore:   opt.ContentStore,
-		Applier:        opt.Applier,
-		CacheAccessor:  cm,
-		SessionManager: opt.SessionManager,
+	ci := trans.NewImporter(trans.ImporterOpt{
+		Snapshotter:   opt.Snapshotter,
+		Applier:       opt.Applier,
+		CacheAccessor: cm,
 	})
 
 	return &Worker{
@@ -203,8 +200,8 @@ func NewWorker(opt WorkerOpt) (*Worker, error) {
 		cache:         ic,
 		Exporters:     exporters,
 		ImageSource:   is,
-		CacheExporter: ce,
-		CacheImporter: ci,
+		cacheExporter: ce,
+		cacheImporter: ci,
 	}, nil
 }
 
@@ -269,6 +266,22 @@ func (w *Worker) Exporter(name string) (exporter.Exporter, error) {
 
 func (w *Worker) InstructionCache() instructioncache.InstructionCache {
 	return w.cache
+}
+
+func (w *Worker) InjectInstructionCache(ic instructioncache.InstructionCache) {
+	w.cache = instructioncache.Union(w.cache, ic)
+}
+
+func (w *Worker) ContentStore() content.Store {
+	return w.WorkerOpt.ContentStore
+}
+
+func (w *Worker) CacheImporter() trans.Importer {
+	return w.cacheImporter
+}
+
+func (w *Worker) CacheExporter() trans.Exporter {
+	return w.cacheExporter
 }
 
 // utility function. could be moved to the constructor logic?

@@ -40,7 +40,26 @@ func getCredentialsFunc(ctx context.Context, sm *session.Manager) func(string) (
 	}
 }
 
-func Push(ctx context.Context, sm *session.Manager, cs content.Store, dgst digest.Digest, ref string, insecure bool) error {
+func Push(ctx context.Context, sm *session.Manager, cs content.Provider, dgst digest.Digest, ref string, insecure bool) error {
+	ra, err := cs.ReaderAt(ctx, dgst)
+	if err != nil {
+		return err
+	}
+
+	mtype, err := imageutil.DetectManifestMediaType(ra)
+	if err != nil {
+		return err
+	}
+
+	desc := ocispec.Descriptor{
+		Digest:    dgst,
+		Size:      ra.Size(),
+		MediaType: mtype,
+	}
+	return PushWithDescriptor(ctx, sm, cs, desc, ref, insecure)
+}
+
+func PushWithDescriptor(ctx context.Context, sm *session.Manager, cs content.Provider, desc ocispec.Descriptor, ref string, insecure bool) error {
 
 	parsed, err := reference.ParseNormalizedNamed(ref)
 	if err != nil {
@@ -83,27 +102,8 @@ func Push(ctx context.Context, sm *session.Manager, cs content.Store, dgst diges
 		pushHandler,
 	)
 
-	info, err := cs.Info(ctx, dgst)
-	if err != nil {
-		return err
-	}
-
-	ra, err := cs.ReaderAt(ctx, dgst)
-	if err != nil {
-		return err
-	}
-
-	mtype, err := imageutil.DetectManifestMediaType(ra)
-	if err != nil {
-		return err
-	}
-
 	layersDone := oneOffProgress(ctx, "pushing layers")
-	err = images.Dispatch(ctx, images.Handlers(handlers...), ocispec.Descriptor{
-		Digest:    dgst,
-		Size:      info.Size,
-		MediaType: mtype,
-	})
+	err = images.Dispatch(ctx, images.Handlers(handlers...), desc)
 	layersDone(err)
 	if err != nil {
 		return err

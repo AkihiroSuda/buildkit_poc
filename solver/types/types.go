@@ -28,12 +28,10 @@ type Op interface {
 }
 
 type SolveRequest struct {
-	Definition     *pb.Definition
-	Frontend       frontend.Frontend
-	Exporter       exporter.ExporterInstance
-	FrontendOpt    map[string]string
-	ExportCacheRef string
-	ImportCacheRef string
+	Definition  *pb.Definition
+	Frontend    frontend.Frontend
+	Exporter    exporter.ExporterInstance
+	FrontendOpt map[string]string
 }
 
 // Vertex is one node in the build graph

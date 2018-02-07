@@ -9,9 +9,9 @@ import (
 
 	"github.com/BurntSushi/locker"
 	"github.com/moby/buildkit/cache"
-	"github.com/moby/buildkit/cache/cacheimport"
 	"github.com/moby/buildkit/cache/contenthash"
 	"github.com/moby/buildkit/cache/instructioncache"
+	trans "github.com/moby/buildkit/cache/transferable/contentstore"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/frontend"
 	"github.com/moby/buildkit/util/bgfunc"
@@ -44,12 +44,10 @@ type Solver struct {
 	workerController      *worker.Controller
 	determineVertexWorker VertexWorkerDeterminer
 	frontends             map[string]frontend.Frontend
-	ce                    *cacheimport.CacheExporter
-	ci                    *cacheimport.CacheImporter
 }
 
-func New(resolve ResolveOpFunc, wc *worker.Controller, vwd VertexWorkerDeterminer, f map[string]frontend.Frontend, ce *cacheimport.CacheExporter, ci *cacheimport.CacheImporter) *Solver {
-	return &Solver{resolve: resolve, jobs: newJobList(), workerController: wc, determineVertexWorker: vwd, frontends: f, ce: ce, ci: ci}
+func New(resolve ResolveOpFunc, wc *worker.Controller, vwd VertexWorkerDeterminer, f map[string]frontend.Frontend) *Solver {
+	return &Solver{resolve: resolve, jobs: newJobList(), workerController: wc, determineVertexWorker: vwd, frontends: f}
 }
 
 func (s *Solver) solve(ctx context.Context, j *job, req SolveRequest) (Ref, map[string][]byte, error) {
@@ -80,37 +78,30 @@ func (s *Solver) llbBridge(j *job) *llbBridge {
 	return &llbBridge{job: j, Solver: s, Worker: worker}
 }
 
-func (s *Solver) Solve(ctx context.Context, id string, req SolveRequest) error {
+func (s *Solver) Solve(ctx context.Context, id string, req SolveRequest) (CacheExporter, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	pr, ctx, closeProgressWriter := progress.NewContext(ctx)
 	defer closeProgressWriter()
 
-	// TODO: multiworker. This should take union cache of all workers
+	// TODO: multiworker.
 	defaultWorker, err := s.workerController.GetDefault()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	mainCache := defaultWorker.InstructionCache()
-	if importRef := req.ImportCacheRef; importRef != "" {
-		cache, err := s.ci.Import(ctx, importRef)
-		if err != nil {
-			return err
-		}
-		mainCache = instructioncache.Union(mainCache, cache)
-	}
 
 	// register a build job. vertex needs to be loaded to a job to run
 	ctx, j, err := s.jobs.new(ctx, id, pr, mainCache)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	ref, exporterOpt, err := s.solve(ctx, j, req)
 	defer j.discard()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer func() {
@@ -124,10 +115,10 @@ func (s *Solver) Solve(ctx context.Context, id string, req SolveRequest) error {
 		var ok bool
 		immutable, ok = ToImmutableRef(ref)
 		if !ok {
-			return errors.Errorf("invalid reference for exporting: %T", ref)
+			return nil, errors.Errorf("invalid reference for exporting: %T", ref)
 		}
 		if err := immutable.Finalize(ctx); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -135,30 +126,14 @@ func (s *Solver) Solve(ctx context.Context, id string, req SolveRequest) error {
 		if err := inVertexContext(ctx, exp.Name(), func(ctx context.Context) error {
 			return exp.Export(ctx, immutable, exporterOpt)
 		}); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	if exportName := req.ExportCacheRef; exportName != "" {
-		if err := inVertexContext(ctx, "exporting build cache", func(ctx context.Context) error {
-			cache, err := j.cacheExporter(ref)
-			if err != nil {
-				return err
-			}
-
-			records, err := cache.Export(ctx)
-			if err != nil {
-				return err
-			}
-
-			// TODO: multiworker
-			return s.ce.Export(ctx, records, exportName)
-		}); err != nil {
-			return err
-		}
+	if ref == nil {
+		return nil, nil
 	}
-
-	return err
+	return j.cacheExporter(ref)
 }
 
 func (s *Solver) Status(ctx context.Context, id string, statusChan chan *client.SolveStatus) error {
@@ -273,7 +248,7 @@ func markCached(ctx context.Context, cv client.Vertex) {
 }
 
 type CacheExporter interface {
-	Export(context.Context) ([]cacheimport.CacheRecord, error)
+	Export(context.Context) ([]trans.CacheRecord, error)
 }
 
 func (vs *vertexSolver) Cache(index Index, ref Ref) CacheExporter {
@@ -286,12 +261,12 @@ type cacheExporter struct {
 	ref   Ref
 }
 
-func (ce *cacheExporter) Export(ctx context.Context) ([]cacheimport.CacheRecord, error) {
+func (ce *cacheExporter) Export(ctx context.Context) ([]trans.CacheRecord, error) {
 	return ce.vertexSolver.Export(ctx, ce.index, ce.ref)
 }
 
-func (vs *vertexSolver) Export(ctx context.Context, index Index, ref Ref) ([]cacheimport.CacheRecord, error) {
-	mp := map[digest.Digest]cacheimport.CacheRecord{}
+func (vs *vertexSolver) Export(ctx context.Context, index Index, ref Ref) ([]trans.CacheRecord, error) {
+	mp := map[digest.Digest]trans.CacheRecord{}
 	if err := vs.appendInputCache(ctx, mp); err != nil {
 		return nil, err
 	}
@@ -304,15 +279,15 @@ func (vs *vertexSolver) Export(ctx context.Context, index Index, ref Ref) ([]cac
 		return nil, errors.Errorf("invalid reference")
 	}
 	dgst = cacheKeyForIndex(dgst, index)
-	mp[dgst] = cacheimport.CacheRecord{CacheKey: dgst, Reference: immutable}
-	out := make([]cacheimport.CacheRecord, 0, len(mp))
+	mp[dgst] = trans.CacheRecord{CacheKey: dgst, Reference: immutable}
+	out := make([]trans.CacheRecord, 0, len(mp))
 	for _, cr := range mp {
 		out = append(out, cr)
 	}
 	return out, nil
 }
 
-func (vs *vertexSolver) appendInputCache(ctx context.Context, mp map[digest.Digest]cacheimport.CacheRecord) error {
+func (vs *vertexSolver) appendInputCache(ctx context.Context, mp map[digest.Digest]trans.CacheRecord) error {
 	for i, inp := range vs.inputs {
 		mainDgst, err := inp.solver.(*vertexSolver).mainCacheKey()
 		if err != nil {
@@ -328,9 +303,9 @@ func (vs *vertexSolver) appendInputCache(ctx context.Context, mp map[digest.Dige
 				if !ok {
 					return errors.Errorf("invalid reference")
 				}
-				mp[dgst] = cacheimport.CacheRecord{CacheKey: dgst, Reference: ref}
+				mp[dgst] = trans.CacheRecord{CacheKey: dgst, Reference: ref}
 			} else {
-				mp[dgst] = cacheimport.CacheRecord{CacheKey: dgst}
+				mp[dgst] = trans.CacheRecord{CacheKey: dgst}
 			}
 		}
 	}
@@ -339,7 +314,7 @@ func (vs *vertexSolver) appendInputCache(ctx context.Context, mp map[digest.Dige
 		if err != nil {
 			return err
 		}
-		mp[ck] = cacheimport.CacheRecord{CacheKey: mainDgst, ContentKey: ck}
+		mp[ck] = trans.CacheRecord{CacheKey: mainDgst, ContentKey: ck}
 	}
 	return nil
 }
