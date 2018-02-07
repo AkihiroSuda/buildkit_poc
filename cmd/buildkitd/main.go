@@ -15,7 +15,6 @@ import (
 	"github.com/containerd/containerd/sys"
 	"github.com/docker/go-connections/sockets"
 	"github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc"
-	"github.com/moby/buildkit/cache/cacheimport"
 	"github.com/moby/buildkit/control"
 	"github.com/moby/buildkit/frontend"
 	"github.com/moby/buildkit/frontend/dockerfile"
@@ -25,7 +24,6 @@ import (
 	"github.com/moby/buildkit/util/appdefaults"
 	"github.com/moby/buildkit/util/profiler"
 	"github.com/moby/buildkit/worker"
-	"github.com/moby/buildkit/worker/base"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
@@ -307,27 +305,10 @@ func newController(c *cli.Context, root string) (*control.Controller, error) {
 	frontends["dockerfile.v0"] = dockerfile.NewDockerfileFrontend()
 	frontends["gateway.v0"] = gateway.NewGatewayFrontend()
 
-	// cache exporter and importer are manager concepts but as there is no
-	// way to pull data into specific worker yet we currently set them up
-	// as part of default worker
-	var ce *cacheimport.CacheExporter
-	var ci *cacheimport.CacheImporter
-
-	w, err := wc.GetDefault()
-	if err != nil {
-		return nil, err
-	}
-
-	wt := w.(*base.Worker)
-	ce = wt.CacheExporter
-	ci = wt.CacheImporter
-
 	return control.NewController(control.Opt{
 		SessionManager:   sessionManager,
 		WorkerController: wc,
 		Frontends:        frontends,
-		CacheExporter:    ce,
-		CacheImporter:    ci,
 	})
 }
 

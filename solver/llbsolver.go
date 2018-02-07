@@ -1,7 +1,6 @@
 package solver
 
 import (
-	"github.com/moby/buildkit/cache/cacheimport"
 	"github.com/moby/buildkit/frontend"
 	"github.com/moby/buildkit/worker"
 )
@@ -17,8 +16,6 @@ func determineVertexWorker(wc *worker.Controller, v Vertex) (worker.Worker, erro
 type LLBOpt struct {
 	WorkerController *worker.Controller
 	Frontends        map[string]frontend.Frontend // used by nested invocations
-	CacheExporter    *cacheimport.CacheExporter
-	CacheImporter    *cacheimport.CacheImporter
 }
 
 func NewLLBOpSolver(opt LLBOpt) *Solver {
@@ -30,6 +27,6 @@ func NewLLBOpSolver(opt LLBOpt) *Solver {
 			return nil, err
 		}
 		return w.ResolveOp(v, s)
-	}, opt.WorkerController, determineVertexWorker, opt.Frontends, opt.CacheExporter, opt.CacheImporter)
+	}, opt.WorkerController, determineVertexWorker, opt.Frontends)
 	return s
 }

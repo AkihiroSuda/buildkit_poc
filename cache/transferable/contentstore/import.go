@@ -1,25 +1,21 @@
-package cacheimport
+package contentstore
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/diff"
-	"github.com/containerd/containerd/remotes"
-	"github.com/containerd/containerd/remotes/docker"
 	"github.com/containerd/containerd/rootfs"
 	cdsnapshot "github.com/containerd/containerd/snapshots"
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/cache/blobs"
 	"github.com/moby/buildkit/cache/instructioncache"
+	"github.com/moby/buildkit/cache/transferable"
 	"github.com/moby/buildkit/client"
 	buildkitidentity "github.com/moby/buildkit/identity"
-	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/session/auth"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/util/progress"
 	digest "github.com/opencontainers/go-digest"
@@ -29,71 +25,26 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type ImportOpt struct {
-	SessionManager *session.Manager
-	ContentStore   content.Store
-	Snapshotter    snapshot.Snapshotter
-	Applier        diff.Differ
-	CacheAccessor  cache.Accessor
+type ImporterOpt struct {
+	Snapshotter   snapshot.Snapshotter
+	Applier       diff.Differ
+	CacheAccessor cache.Accessor
 }
 
-func NewCacheImporter(opt ImportOpt) *CacheImporter {
-	return &CacheImporter{opt: opt}
+func NewImporter(opt ImporterOpt) EnsurableImporter {
+	return &importer{opt: opt}
 }
 
-type CacheImporter struct {
-	opt ImportOpt
+type importer struct {
+	opt ImporterOpt
 }
 
-func (ci *CacheImporter) getCredentialsFromSession(ctx context.Context) func(string) (string, string, error) {
-	id := session.FromContext(ctx)
-	if id == "" {
-		return nil
-	}
-
-	return func(host string) (string, string, error) {
-		timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		caller, err := ci.opt.SessionManager.Get(timeoutCtx, id)
-		if err != nil {
-			return "", "", err
-		}
-
-		return auth.CredentialsFunc(context.TODO(), caller)(host)
-	}
+func (ci *importer) Import(ctx context.Context, tr Transfer) (instructioncache.InstructionCache, error) {
+	return ci.ImportWithContentEnsurer(ctx, tr, nil)
 }
 
-func (ci *CacheImporter) pull(ctx context.Context, ref string) (*ocispec.Descriptor, remotes.Fetcher, error) {
-	resolver := docker.NewResolver(docker.ResolverOptions{
-		Client:      http.DefaultClient,
-		Credentials: ci.getCredentialsFromSession(ctx),
-	})
-
-	ref, desc, err := resolver.Resolve(ctx, ref)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	fetcher, err := resolver.Fetcher(ctx, ref)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if _, err := remotes.FetchHandler(ci.opt.ContentStore, fetcher)(ctx, desc); err != nil {
-		return nil, nil, err
-	}
-
-	return &desc, fetcher, err
-}
-
-func (ci *CacheImporter) Import(ctx context.Context, ref string) (instructioncache.InstructionCache, error) {
-	desc, fetcher, err := ci.pull(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
-
-	dt, err := content.ReadBlob(ctx, ci.opt.ContentStore, desc.Digest)
+func (ci *importer) ImportWithContentEnsurer(ctx context.Context, tr Transfer, ensurer ContentEnsurer) (instructioncache.InstructionCache, error) {
+	dt, err := content.ReadBlob(ctx, tr.ContentProvider, tr.Digest)
 	if err != nil {
 		return nil, err
 	}
@@ -104,14 +55,14 @@ func (ci *CacheImporter) Import(ctx context.Context, ref string) (instructioncac
 	}
 
 	allDesc := map[digest.Digest]ocispec.Descriptor{}
-	allBlobs := map[digest.Digest]configItem{}
-	byCacheKey := map[digest.Digest]configItem{}
+	allBlobs := map[digest.Digest]transferable.ConfigItem{}
+	byCacheKey := map[digest.Digest]transferable.ConfigItem{}
 	byContentKey := map[digest.Digest][]digest.Digest{}
 
 	var configDesc ocispec.Descriptor
 
 	for _, m := range mfst.Manifests {
-		if m.MediaType == mediaTypeConfig {
+		if m.MediaType == transferable.MediaTypeCacheConfig {
 			configDesc = m
 			continue
 		}
@@ -119,19 +70,25 @@ func (ci *CacheImporter) Import(ctx context.Context, ref string) (instructioncac
 	}
 
 	if configDesc.Digest == "" {
-		return nil, errors.Errorf("invalid build cache: %s", ref)
+		return nil, errors.Errorf("invalid build cache: %s", tr.Digest)
 	}
 
-	if _, err := remotes.FetchHandler(ci.opt.ContentStore, fetcher)(ctx, configDesc); err != nil {
-		return nil, err
+	store, ok := tr.ContentProvider.(content.Store)
+	if ensurer != nil {
+		if !ok {
+			return nil, errors.New("writable content store is needed for content ensurer")
+		}
+		if err := ensurer(ctx, store, configDesc); err != nil {
+			return nil, err
+		}
 	}
 
-	dt, err = content.ReadBlob(ctx, ci.opt.ContentStore, configDesc.Digest)
+	dt, err = content.ReadBlob(ctx, store, configDesc.Digest)
 	if err != nil {
 		return nil, err
 	}
 
-	var cfg cacheConfig
+	var cfg transferable.CacheConfig
 	if err := json.Unmarshal(dt, &cfg); err != nil {
 		return nil, err
 	}
@@ -149,24 +106,26 @@ func (ci *CacheImporter) Import(ctx context.Context, ref string) (instructioncac
 	}
 
 	return &importInfo{
-		CacheImporter: ci,
-		byCacheKey:    byCacheKey,
-		byContentKey:  byContentKey,
-		allBlobs:      allBlobs,
-		allDesc:       allDesc,
-		fetcher:       fetcher,
-		ref:           ref,
+		importer:     ci,
+		byCacheKey:   byCacheKey,
+		byContentKey: byContentKey,
+		allBlobs:     allBlobs,
+		allDesc:      allDesc,
+		description:  "content " + string(tr.Digest),
+		provider:     tr.ContentProvider,
+		ensurer:      ensurer,
 	}, nil
 }
 
 type importInfo struct {
-	*CacheImporter
-	fetcher      remotes.Fetcher
-	byCacheKey   map[digest.Digest]configItem
+	*importer
+	byCacheKey   map[digest.Digest]transferable.ConfigItem
 	byContentKey map[digest.Digest][]digest.Digest
 	allDesc      map[digest.Digest]ocispec.Descriptor
-	allBlobs     map[digest.Digest]configItem
-	ref          string
+	allBlobs     map[digest.Digest]transferable.ConfigItem
+	description  string // just human-readable
+	provider     ContentProvider
+	ensurer      ContentEnsurer
 }
 
 func (ii *importInfo) Probe(ctx context.Context, key digest.Digest) (bool, error) {
@@ -198,7 +157,7 @@ func (ii *importInfo) Lookup(ctx context.Context, key digest.Digest, msg string)
 		return nil, nil
 	}
 	var out interface{}
-	if err := inVertexContext(ctx, fmt.Sprintf("cache from %s for %s", ii.ref, msg), func(ctx context.Context) error {
+	if err := inVertexContext(ctx, fmt.Sprintf("cache from %s for %s", ii.description, msg), func(ctx context.Context) error {
 
 		ch, err := ii.getChain(desc.Blobsum)
 		if err != nil {
@@ -233,25 +192,27 @@ func (ii *importInfo) GetContentMapping(dgst digest.Digest) ([]digest.Digest, er
 }
 
 func (ii *importInfo) fetch(ctx context.Context, chain []blobs.DiffPair) (cache.ImmutableRef, error) {
-	eg, ctx := errgroup.WithContext(ctx)
-	for _, dp := range chain {
-		func(dp blobs.DiffPair) {
-			eg.Go(func() error {
-				desc, ok := ii.allDesc[dp.Blobsum]
-				if !ok {
-					return errors.Errorf("failed to find %s for fetch", dp.Blobsum)
-				}
-				if _, err := remotes.FetchHandler(ii.opt.ContentStore, ii.fetcher)(ctx, desc); err != nil {
-					return err
-				}
-				return nil
-			})
-		}(dp)
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
+	if ii.ensurer != nil {
+		eg, ctx := errgroup.WithContext(ctx)
+		for _, dp := range chain {
+			func(dp blobs.DiffPair) {
+				eg.Go(func() error {
+					desc, ok := ii.allDesc[dp.Blobsum]
+					if !ok {
+						return errors.Errorf("failed to find %s for fetch", dp.Blobsum)
+					}
+					if err := ii.ensurer(ctx, ii.provider.(content.Store), desc); err != nil {
+						return err
+					}
+					return nil
+				})
+			}(dp)
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, err
+		}
 
+	}
 	chainid, err := ii.unpack(ctx, chain)
 	if err != nil {
 		return nil, err
@@ -305,7 +266,7 @@ func (ii *importInfo) getLayers(ctx context.Context, dpairs []blobs.DiffPair) ([
 			MediaType: ocispec.MediaTypeImageLayer,
 			Digest:    dpairs[i].DiffID,
 		}
-		info, err := ii.opt.ContentStore.Info(ctx, dpairs[i].Blobsum)
+		info, err := ii.provider.Info(ctx, dpairs[i].Blobsum)
 		if err != nil {
 			return nil, err
 		}

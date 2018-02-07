@@ -5,7 +5,8 @@ import (
 
 	"github.com/docker/distribution/reference"
 	controlapi "github.com/moby/buildkit/api/services/control"
-	"github.com/moby/buildkit/cache/cacheimport"
+	trans "github.com/moby/buildkit/cache/transferable/contentstore"
+	registrytrans "github.com/moby/buildkit/cache/transferable/registry"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/exporter"
 	"github.com/moby/buildkit/frontend"
@@ -24,8 +25,6 @@ type Opt struct {
 	SessionManager   *session.Manager
 	WorkerController *worker.Controller
 	Frontends        map[string]frontend.Frontend
-	CacheExporter    *cacheimport.CacheExporter
-	CacheImporter    *cacheimport.CacheImporter
 }
 
 type Controller struct { // TODO: ControlService
@@ -39,8 +38,6 @@ func NewController(opt Opt) (*Controller, error) {
 		solver: solver.NewLLBOpSolver(solver.LLBOpt{
 			WorkerController: opt.WorkerController,
 			Frontends:        opt.Frontends,
-			CacheExporter:    opt.CacheExporter,
-			CacheImporter:    opt.CacheImporter,
 		}),
 	}
 	return c, nil
@@ -169,24 +166,58 @@ func (c *Controller) Solve(ctx netcontext.Context, req *controlapi.SolveRequest)
 		exportCacheRef = reference.TagNameOnly(parsed).String()
 	}
 
-	importCacheRef := ""
 	if ref := req.Cache.ImportRef; ref != "" {
 		parsed, err := reference.ParseNormalizedNamed(ref)
 		if err != nil {
 			return nil, err
 		}
-		importCacheRef = reference.TagNameOnly(parsed).String()
+		importCacheRef := reference.TagNameOnly(parsed).String()
+		// TODO: multiworker
+		w, err := c.opt.WorkerController.GetDefault()
+		if err != nil {
+			return nil, err
+		}
+		ci := w.CacheImporter().(trans.EnsurableImporter)
+		regciOpt := registrytrans.ImporterOpt{
+			SessionManager:            c.opt.SessionManager,
+			ContentStore:              w.ContentStore(),
+			ContentStoreCacheImporter: ci,
+		}
+		regCI := registrytrans.NewImporter(regciOpt)
+		ic, err := regCI.Import(ctx, importCacheRef)
+		if err != nil {
+			return nil, err
+		}
+		w.InjectInstructionCache(ic)
 	}
 
-	if err := c.solver.Solve(ctx, req.Ref, solver.SolveRequest{
-		Frontend:       frontend,
-		Definition:     req.Definition,
-		Exporter:       expi,
-		FrontendOpt:    req.FrontendAttrs,
-		ExportCacheRef: exportCacheRef,
-		ImportCacheRef: importCacheRef,
-	}); err != nil {
+	solverCE, err := c.solver.Solve(ctx, req.Ref, solver.SolveRequest{
+		Frontend:    frontend,
+		Definition:  req.Definition,
+		Exporter:    expi,
+		FrontendOpt: req.FrontendAttrs,
+	})
+	if err != nil {
 		return nil, err
+	}
+	if exportCacheRef != "" {
+		records, err := solverCE.Export(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// TODO: multiworker
+		w, err := c.opt.WorkerController.GetDefault()
+		if err != nil {
+			return nil, err
+		}
+		regCEOpt := registrytrans.ExporterOpt{
+			SessionManager:            c.opt.SessionManager,
+			ContentStoreCacheExporter: w.CacheExporter(),
+		}
+		regCE := registrytrans.NewExporter(regCEOpt)
+		if err = regCE.Export(ctx, records, exportCacheRef); err != nil {
+			return nil, err
+		}
 	}
 	return &controlapi.SolveResponse{}, nil
 }
