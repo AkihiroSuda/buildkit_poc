@@ -2,10 +2,11 @@ package registry
 
 import (
 	"context"
-	"sync"
+	"io"
 	"time"
 
 	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/docker/distribution/reference"
@@ -14,6 +15,7 @@ import (
 	"github.com/moby/buildkit/util/tracing"
 	digest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/pkg/errors"
 )
 
 // TODO: deduplicate
@@ -35,7 +37,7 @@ func getCredentialsFunc(ctx context.Context, sm *session.Manager) func(string) (
 	}
 }
 
-func NewStore(ctx context.Context, sm *session.Manager, readCache content.Store, ref string, insecure bool) (*Store, remotes.Resolver, error) {
+func NewStore(ctx context.Context, sm *session.Manager, ref string, insecure bool) (*Store, remotes.Resolver, error) {
 	parsed, err := reference.ParseNormalizedNamed(ref)
 	if err != nil {
 		return nil, nil, err
@@ -48,89 +50,93 @@ func NewStore(ctx context.Context, sm *session.Manager, readCache content.Store,
 		PlainHTTP:   insecure,
 	})
 	store := &Store{
-		cs:       readCache,
 		ref:      ref,
 		resolver: resolver,
-		m:        make(map[digest.Digest]string, 0),
 	}
 	return store, resolver, nil
 }
 
 type Store struct {
-	cs       content.Store
 	ref      string
 	resolver remotes.Resolver
-	mmu      sync.Mutex
-	m        map[digest.Digest]string
-}
-
-func (s *Store) SetMediaType(d digest.Digest, mt string) {
-	s.mmu.Lock()
-	s.m[d] = mt
-	s.mmu.Unlock()
-}
-
-func (s *Store) ReleaseMediaType(d digest.Digest) {
-	s.mmu.Lock()
-	delete(s.m, d)
-	s.mmu.Unlock()
-}
-
-func (s *Store) ensure(ctx context.Context, dgst digest.Digest) error {
-	fetcher, err := s.resolver.Fetcher(ctx, s.ref)
-	if err != nil {
-		return err
-	}
-	s.mmu.Lock()
-	mediaType := s.m[dgst]
-	s.mmu.Unlock()
-	desc := ocispec.Descriptor{
-		Digest:    dgst,
-		MediaType: mediaType,
-		Size:      -1, // FIXME
-	}
-	_, err = remotes.FetchHandler(s.cs, fetcher)(ctx, desc)
-	return err
 }
 
 func (s *Store) ReaderAt(ctx context.Context, dgst digest.Digest) (content.ReaderAt, error) {
-	cached, err := s.cs.ReaderAt(ctx, dgst)
-	if cached != nil && err == nil {
-		return cached, err
+	desc := ocispec.Descriptor{
+		MediaType: "",
+		Digest:    dgst,
+		Size:      -1,
 	}
-	if err := s.ensure(ctx, dgst); err != nil {
+	return s.ReaderAtWithOCIDescriptor(ctx, desc)
+}
+
+func (s *Store) ReaderAtWithOCIDescriptor(ctx context.Context, desc ocispec.Descriptor) (content.ReaderAt, error) {
+	fetcher, err := s.resolver.Fetcher(ctx, s.ref)
+	if err != nil {
 		return nil, err
 	}
-	return s.cs.ReaderAt(ctx, dgst)
+	// fetcher requires desc.MediaType to determine the GET URL, especially for manifest blobs.
+	r, err := fetcher.Fetch(ctx, desc)
+	if err != nil {
+		return nil, err
+	}
+	return &readerAt{
+		r:    r,
+		desc: desc,
+	}, nil
+}
+
+type readerAt struct {
+	r    io.ReadCloser
+	desc ocispec.Descriptor
+}
+
+func (r *readerAt) ReadAt(p []byte, off int64) (n int, err error) {
+	if ra, ok := r.r.(io.ReaderAt); ok {
+		return ra.ReadAt(p, off)
+	}
+	if off != 0 {
+		return 0, errors.Wrap(errdefs.ErrInvalidArgument, "fetcher does not support non-zero offset")
+	}
+	return r.r.Read(p)
+}
+
+func (r *readerAt) Close() error {
+	return r.r.Close()
+}
+
+func (r *readerAt) Size() int64 {
+	return r.desc.Size
 }
 
 func (s *Store) Writer(ctx context.Context, ref string, size int64, expected digest.Digest) (content.Writer, error) {
-	// TODO(AkihiroSuda): tee to s.cs as well
+	desc := ocispec.Descriptor{
+		MediaType: "",
+		Digest:    expected,
+		Size:      size,
+	}
+	return s.WriterWithOCIDescriptor(ctx, ref, desc)
+}
+
+func (s *Store) WriterWithOCIDescriptor(ctx context.Context, ref string, desc ocispec.Descriptor) (content.Writer, error) {
 	pusher, err := s.resolver.Pusher(ctx, s.ref)
 	if err != nil {
 		return nil, err
 	}
-	s.mmu.Lock()
-	mediaType := s.m[expected]
-	s.mmu.Unlock()
-	desc := ocispec.Descriptor{
-		Digest:    expected,
-		MediaType: mediaType,
-		Size:      size,
-	}
-	cWriter, err := pusher.Push(ctx, desc)
+	// pusher requires desc.MediaType to determine the PUT URL, especially for manifest blobs.
+	contentWriter, err := pusher.Push(ctx, desc)
 	if err != nil {
 		return nil, err
 	}
 	return &writer{
-		Writer: cWriter,
-		cRef:   ref,
+		Writer:           contentWriter,
+		contentWriterRef: ref,
 	}, nil
 }
 
 type writer struct {
-	content.Writer
-	cRef string
+	content.Writer          // returned from pusher.Push
+	contentWriterRef string // ref passed for Writer()
 }
 
 func (w *writer) Status() (content.Status, error) {
@@ -138,8 +144,8 @@ func (w *writer) Status() (content.Status, error) {
 	if err != nil {
 		return st, err
 	}
-	if w.cRef != "" {
-		st.Ref = w.cRef
+	if w.contentWriterRef != "" {
+		st.Ref = w.contentWriterRef
 	}
 	return st, nil
 }
