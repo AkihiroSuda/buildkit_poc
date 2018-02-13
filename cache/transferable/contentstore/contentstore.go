@@ -20,15 +20,6 @@ type Importer interface {
 	Import(ctx context.Context, tr Transfer) (instructioncache.InstructionCache, error)
 }
 
-// ContentEnsure ensures the blob to be available in the store.
-// Expected to be used with a registry.
-type ContentEnsurer func(context.Context, content.Store, ocispec.Descriptor) error
-
-type EnsurableImporter interface {
-	Importer
-	ImportWithContentEnsurer(ctx context.Context, tr Transfer, ensurer ContentEnsurer) (instructioncache.InstructionCache, error)
-}
-
 type CacheRecord struct {
 	CacheKey   digest.Digest
 	Reference  cache.ImmutableRef

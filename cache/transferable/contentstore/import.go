@@ -17,6 +17,7 @@ import (
 	"github.com/moby/buildkit/client"
 	buildkitidentity "github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/snapshot"
+	"github.com/moby/buildkit/util/mediastore"
 	"github.com/moby/buildkit/util/progress"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/identity"
@@ -31,7 +32,7 @@ type ImporterOpt struct {
 	CacheAccessor cache.Accessor
 }
 
-func NewImporter(opt ImporterOpt) EnsurableImporter {
+func NewImporter(opt ImporterOpt) Importer {
 	return &importer{opt: opt}
 }
 
@@ -40,10 +41,6 @@ type importer struct {
 }
 
 func (ci *importer) Import(ctx context.Context, tr Transfer) (instructioncache.InstructionCache, error) {
-	return ci.ImportWithContentEnsurer(ctx, tr, nil)
-}
-
-func (ci *importer) ImportWithContentEnsurer(ctx context.Context, tr Transfer, ensurer ContentEnsurer) (instructioncache.InstructionCache, error) {
 	dt, err := content.ReadBlob(ctx, tr.ContentProvider, tr.Digest)
 	if err != nil {
 		return nil, err
@@ -73,17 +70,12 @@ func (ci *importer) ImportWithContentEnsurer(ctx context.Context, tr Transfer, e
 		return nil, errors.Errorf("invalid build cache: %s", tr.Digest)
 	}
 
-	store, ok := tr.ContentProvider.(content.Store)
-	if ensurer != nil {
-		if !ok {
-			return nil, errors.New("writable content store is needed for content ensurer")
-		}
-		if err := ensurer(ctx, store, configDesc); err != nil {
-			return nil, err
-		}
+	mtm, ok := tr.ContentProvider.(mediastore.MediaTypeMapper)
+	if ok {
+		mtm.SetMediaType(configDesc.Digest, configDesc.MediaType)
 	}
 
-	dt, err = content.ReadBlob(ctx, store, configDesc.Digest)
+	dt, err = content.ReadBlob(ctx, tr.ContentProvider, configDesc.Digest)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +117,6 @@ type importInfo struct {
 	allBlobs     map[digest.Digest]transferable.ConfigItem
 	description  string // just human-readable
 	provider     content.Provider
-	ensurer      ContentEnsurer
 }
 
 func (ii *importInfo) Probe(ctx context.Context, key digest.Digest) (bool, error) {
@@ -192,7 +183,8 @@ func (ii *importInfo) GetContentMapping(dgst digest.Digest) ([]digest.Digest, er
 }
 
 func (ii *importInfo) fetch(ctx context.Context, chain []blobs.DiffPair) (cache.ImmutableRef, error) {
-	if ii.ensurer != nil {
+	mtm, ok := ii.provider.(mediastore.MediaTypeMapper)
+	if ok {
 		eg, ctx := errgroup.WithContext(ctx)
 		for _, dp := range chain {
 			func(dp blobs.DiffPair) {
@@ -201,9 +193,13 @@ func (ii *importInfo) fetch(ctx context.Context, chain []blobs.DiffPair) (cache.
 					if !ok {
 						return errors.Errorf("failed to find %s for fetch", dp.Blobsum)
 					}
-					if err := ii.ensurer(ctx, ii.provider.(content.Store), desc); err != nil {
+					mtm.SetMediaType(desc.Digest, desc.MediaType)
+					// FIXME(AkihiroSuda): this bad hack ensures the content to be fetched.
+					// Note that the read cache store needs to be the differ store.
+					if _, err := ii.provider.ReaderAt(ctx, desc.Digest); err != nil {
 						return err
 					}
+					mtm.ReleaseMediaType(desc.Digest, desc.MediaType)
 					return nil
 				})
 			}(dp)

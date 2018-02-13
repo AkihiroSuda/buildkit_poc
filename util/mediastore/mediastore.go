@@ -2,6 +2,8 @@
 package mediastore
 
 import (
+	"context"
+
 	"github.com/containerd/containerd/content"
 	"github.com/opencontainers/go-digest"
 )
@@ -9,6 +11,10 @@ import (
 type MediaTypeMapper interface {
 	SetMediaType(digest.Digest, string)
 	ReleaseMediaType(digest.Digest)
+}
+
+type Ensurer interface {
+	Ensure(ctx context.Context, dgst digest.Digest, off, len int64) error
 }
 
 type Ingester interface {
@@ -19,5 +25,4 @@ type Ingester interface {
 type Provider interface {
 	content.Provider
 	MediaTypeMapper
-	// TODO: add blob size mapper?
 }
