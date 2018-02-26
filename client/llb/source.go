@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/docker/distribution/reference"
-	"github.com/moby/buildkit/solver/pb"
+	pb "github.com/moby/buildkit/llb"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )

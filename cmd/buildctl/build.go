@@ -11,7 +11,7 @@ import (
 	"github.com/containerd/console"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/solver/pb"
+	llbpb "github.com/moby/buildkit/llb"
 	"github.com/moby/buildkit/util/progress/progressui"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -75,7 +75,7 @@ func read(r io.Reader, clicontext *cli.Context) (*llb.Definition, error) {
 	}
 	if clicontext.Bool("no-cache") {
 		for _, dt := range def.Def {
-			var op pb.Op
+			var op llbpb.Op
 			if err := (&op).Unmarshal(dt); err != nil {
 				return nil, errors.Wrap(err, "failed to parse llb proto op")
 			}

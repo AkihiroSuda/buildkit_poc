@@ -7,9 +7,9 @@ import (
 
 	"github.com/containerd/continuity/fs"
 	"github.com/moby/buildkit/client/llb"
+	llbpb "github.com/moby/buildkit/llb"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/worker"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -18,12 +18,12 @@ import (
 const buildCacheType = "buildkit.build.v0"
 
 type buildOp struct {
-	op *pb.BuildOp
+	op *llbpb.BuildOp
 	s  worker.SubBuilder
 	v  solver.Vertex
 }
 
-func NewBuildOp(v solver.Vertex, op *pb.Op_Build, s worker.SubBuilder) (solver.Op, error) {
+func NewBuildOp(v solver.Vertex, op *llbpb.Op_Build, s worker.SubBuilder) (solver.Op, error) {
 	return &buildOp{
 		op: op.Build,
 		s:  s,
@@ -34,7 +34,7 @@ func NewBuildOp(v solver.Vertex, op *pb.Op_Build, s worker.SubBuilder) (solver.O
 func (b *buildOp) CacheKey(ctx context.Context) (digest.Digest, error) {
 	dt, err := json.Marshal(struct {
 		Type string
-		Exec *pb.BuildOp
+		Exec *llbpb.BuildOp
 	}{
 		Type: buildCacheType,
 		Exec: b.op,
@@ -46,14 +46,14 @@ func (b *buildOp) CacheKey(ctx context.Context) (digest.Digest, error) {
 }
 
 func (b *buildOp) Run(ctx context.Context, inputs []solver.Ref) (outputs []solver.Ref, retErr error) {
-	if b.op.Builder != pb.LLBBuilder {
+	if b.op.Builder != llbpb.LLBBuilder {
 		return nil, errors.Errorf("only llb builder is currently allowed")
 	}
 
 	builderInputs := b.op.Inputs
-	llbDef, ok := builderInputs[pb.LLBDefinitionInput]
+	llbDef, ok := builderInputs[llbpb.LLBDefinitionInput]
 	if !ok {
-		return nil, errors.Errorf("no llb definition input %s found", pb.LLBDefinitionInput)
+		return nil, errors.Errorf("no llb definition input %s found", llbpb.LLBDefinitionInput)
 	}
 
 	i := int(llbDef.Input)
@@ -85,8 +85,8 @@ func (b *buildOp) Run(ctx context.Context, inputs []solver.Ref) (outputs []solve
 		}
 	}()
 
-	fn := pb.LLBDefaultDefinitionFile
-	if override, ok := b.op.Attrs[pb.AttrLLBDefinitionFilename]; ok {
+	fn := llbpb.LLBDefaultDefinitionFile
+	if override, ok := b.op.Attrs[llbpb.AttrLLBDefinitionFilename]; ok {
 		fn = override
 	}
 

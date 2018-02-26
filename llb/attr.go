@@ -1,4 +1,4 @@
-package pb
+package llb
 
 const AttrKeepGitDir = "git.keepgitdir"
 const AttrLocalSessionID = "local.session"

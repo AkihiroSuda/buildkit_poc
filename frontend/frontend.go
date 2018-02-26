@@ -6,7 +6,7 @@ import (
 
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/executor"
-	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/buildkit/llb"
 	digest "github.com/opencontainers/go-digest"
 )
 
@@ -21,7 +21,7 @@ type FrontendLLBBridge interface {
 }
 
 type SolveRequest struct {
-	Definition  *pb.Definition
+	Definition  *llb.Definition
 	Frontend    string
 	FrontendOpt map[string]string
 }

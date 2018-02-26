@@ -3,7 +3,7 @@ package llb
 import (
 	"context"
 
-	"github.com/moby/buildkit/solver/pb"
+	pb "github.com/moby/buildkit/llb"
 	"github.com/moby/buildkit/util/system"
 	digest "github.com/opencontainers/go-digest"
 )

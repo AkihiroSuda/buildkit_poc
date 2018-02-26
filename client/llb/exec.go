@@ -4,7 +4,7 @@ import (
 	_ "crypto/sha256"
 	"sort"
 
-	"github.com/moby/buildkit/solver/pb"
+	pb "github.com/moby/buildkit/llb"
 	"github.com/pkg/errors"
 )
 

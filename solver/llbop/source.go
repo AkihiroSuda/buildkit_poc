@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/moby/buildkit/llb"
 	"github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
 	digest "github.com/opencontainers/go-digest"
 )
@@ -14,12 +14,12 @@ const sourceCacheType = "buildkit.source.v0"
 
 type sourceOp struct {
 	mu  sync.Mutex
-	op  *pb.Op_Source
+	op  *llb.Op_Source
 	sm  *source.Manager
 	src source.SourceInstance
 }
 
-func NewSourceOp(_ solver.Vertex, op *pb.Op_Source, sm *source.Manager) (solver.Op, error) {
+func NewSourceOp(_ solver.Vertex, op *llb.Op_Source, sm *source.Manager) (solver.Op, error) {
 	return &sourceOp{
 		op: op,
 		sm: sm,

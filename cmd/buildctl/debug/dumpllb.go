@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/solver/pb"
+	llbpb "github.com/moby/buildkit/llb"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli"
@@ -57,9 +57,9 @@ func dumpLLB(clicontext *cli.Context) error {
 }
 
 type llbOp struct {
-	Op         pb.Op
+	Op         llbpb.Op
 	Digest     digest.Digest
-	OpMetadata pb.OpMetadata
+	OpMetadata llbpb.OpMetadata
 }
 
 func loadLLB(r io.Reader) ([]llbOp, error) {
@@ -69,7 +69,7 @@ func loadLLB(r io.Reader) ([]llbOp, error) {
 	}
 	var ops []llbOp
 	for _, dt := range def.Def {
-		var op pb.Op
+		var op llbpb.Op
 		if err := (&op).Unmarshal(dt); err != nil {
 			return nil, errors.Wrap(err, "failed to parse op")
 		}
@@ -91,7 +91,7 @@ func writeDot(ops []llbOp, w io.Writer) {
 	for _, op := range ops {
 		for i, inp := range op.Op.Inputs {
 			label := ""
-			if eo, ok := op.Op.Op.(*pb.Op_Exec); ok {
+			if eo, ok := op.Op.Op.(*llbpb.Op_Exec); ok {
 				for _, m := range eo.Exec.Mounts {
 					if int(m.Input) == i && m.Dest != "/" {
 						label = m.Dest
@@ -103,13 +103,13 @@ func writeDot(ops []llbOp, w io.Writer) {
 	}
 }
 
-func attr(dgst digest.Digest, op pb.Op) (string, string) {
+func attr(dgst digest.Digest, op llbpb.Op) (string, string) {
 	switch op := op.Op.(type) {
-	case *pb.Op_Source:
+	case *llbpb.Op_Source:
 		return op.Source.Identifier, "ellipse"
-	case *pb.Op_Exec:
+	case *llbpb.Op_Exec:
 		return strings.Join(op.Exec.Meta.Args, " "), "box"
-	case *pb.Op_Build:
+	case *llbpb.Op_Build:
 		return "build", "box3d"
 	default:
 		return dgst.String(), "plaintext"

@@ -4,12 +4,12 @@ import (
 	"io"
 	"io/ioutil"
 
-	"github.com/moby/buildkit/solver/pb"
+	pb "github.com/moby/buildkit/llb"
 	digest "github.com/opencontainers/go-digest"
 )
 
 // Definition is the LLB definition structure with per-vertex metadata entries
-// Corresponds to the Definition structure defined in solver/pb.Definition.
+// Corresponds to the Definition structure defined in pb.Definition.
 type Definition struct {
 	Def      [][]byte
 	Metadata map[digest.Digest]OpMetadata

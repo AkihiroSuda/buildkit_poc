@@ -7,8 +7,8 @@ import (
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/frontend"
 	"github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/llb"
 	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/solver/pb"
 	"github.com/pkg/errors"
 )
 
@@ -25,7 +25,7 @@ type bridgeClient struct {
 	refs         []*ref
 }
 
-func (c *bridgeClient) Solve(ctx context.Context, def *pb.Definition, f string, exporterAttr map[string][]byte, final bool) (client.Reference, error) {
+func (c *bridgeClient) Solve(ctx context.Context, def *llb.Definition, f string, exporterAttr map[string][]byte, final bool) (client.Reference, error) {
 	r, exporterAttrRes, err := c.FrontendLLBBridge.Solve(ctx, frontend.SolveRequest{
 		Definition: def,
 		Frontend:   f,

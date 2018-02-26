@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/reference"
-	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/buildkit/llb"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
@@ -50,7 +50,7 @@ func FromString(s string) (Identifier, error) {
 		return nil, errors.Wrapf(errNotFound, "unknown schema %s", parts[0])
 	}
 }
-func FromLLB(op *pb.Op_Source) (Identifier, error) {
+func FromLLB(op *llb.Op_Source) (Identifier, error) {
 	id, err := FromString(op.Source.Identifier)
 	if err != nil {
 		return nil, err
@@ -58,7 +58,7 @@ func FromLLB(op *pb.Op_Source) (Identifier, error) {
 	if id, ok := id.(*GitIdentifier); ok {
 		for k, v := range op.Source.Attrs {
 			switch k {
-			case pb.AttrKeepGitDir:
+			case llb.AttrKeepGitDir:
 				if v == "true" {
 					id.KeepGitDir = true
 				}
@@ -68,25 +68,25 @@ func FromLLB(op *pb.Op_Source) (Identifier, error) {
 	if id, ok := id.(*LocalIdentifier); ok {
 		for k, v := range op.Source.Attrs {
 			switch k {
-			case pb.AttrLocalSessionID:
+			case llb.AttrLocalSessionID:
 				id.SessionID = v
 				if p := strings.SplitN(v, ":", 2); len(p) == 2 {
 					id.Name = p[0] + "-" + id.Name
 					id.SessionID = p[1]
 				}
-			case pb.AttrIncludePatterns:
+			case llb.AttrIncludePatterns:
 				var patterns []string
 				if err := json.Unmarshal([]byte(v), &patterns); err != nil {
 					return nil, err
 				}
 				id.IncludePatterns = patterns
-			case pb.AttrExcludePatterns:
+			case llb.AttrExcludePatterns:
 				var patterns []string
 				if err := json.Unmarshal([]byte(v), &patterns); err != nil {
 					return nil, err
 				}
 				id.ExcludePatterns = patterns
-			case pb.AttrSharedKeyHint:
+			case llb.AttrSharedKeyHint:
 				id.SharedKeyHint = v
 			}
 		}
@@ -94,27 +94,27 @@ func FromLLB(op *pb.Op_Source) (Identifier, error) {
 	if id, ok := id.(*HttpIdentifier); ok {
 		for k, v := range op.Source.Attrs {
 			switch k {
-			case pb.AttrHTTPChecksum:
+			case llb.AttrHTTPChecksum:
 				dgst, err := digest.Parse(v)
 				if err != nil {
 					return nil, err
 				}
 				id.Checksum = dgst
-			case pb.AttrHTTPFilename:
+			case llb.AttrHTTPFilename:
 				id.Filename = v
-			case pb.AttrHTTPPerm:
+			case llb.AttrHTTPPerm:
 				i, err := strconv.ParseInt(v, 0, 64)
 				if err != nil {
 					return nil, err
 				}
 				id.Perm = int(i)
-			case pb.AttrHTTPUID:
+			case llb.AttrHTTPUID:
 				i, err := strconv.ParseInt(v, 0, 64)
 				if err != nil {
 					return nil, err
 				}
 				id.UID = int(i)
-			case pb.AttrHTTPGID:
+			case llb.AttrHTTPGID:
 				i, err := strconv.ParseInt(v, 0, 64)
 				if err != nil {
 					return nil, err

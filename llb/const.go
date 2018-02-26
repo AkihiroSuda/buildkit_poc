@@ -1,4 +1,4 @@
-package pb
+package llb
 
 type InputIndex int64
 type OutputIndex int64

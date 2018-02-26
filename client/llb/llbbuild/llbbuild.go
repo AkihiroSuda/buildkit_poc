@@ -2,7 +2,7 @@ package llbbuild
 
 import (
 	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/solver/pb"
+	pb "github.com/moby/buildkit/llb"
 	digest "github.com/opencontainers/go-digest"
 )
 

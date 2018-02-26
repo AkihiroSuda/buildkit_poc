@@ -3,13 +3,13 @@ package client
 import (
 	"context"
 
-	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/buildkit/llb"
 	digest "github.com/opencontainers/go-digest"
 )
 
 // TODO: make this take same options as LLBBridge. Add Return()
 type Client interface {
-	Solve(ctx context.Context, def *pb.Definition, frontend string, exporterAttr map[string][]byte, final bool) (Reference, error)
+	Solve(ctx context.Context, def *llb.Definition, frontend string, exporterAttr map[string][]byte, final bool) (Reference, error)
 	ResolveImageConfig(ctx context.Context, ref string) (digest.Digest, []byte, error)
 	Opts() map[string]string
 	SessionID() string

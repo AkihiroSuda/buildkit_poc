@@ -3,13 +3,13 @@ package solver
 import (
 	"strings"
 
-	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/buildkit/llb"
 	"github.com/moby/buildkit/source"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
 
-func newVertex(dgst digest.Digest, op *pb.Op, opMeta *pb.OpMetadata, load func(digest.Digest) (interface{}, error)) (*vertex, error) {
+func newVertex(dgst digest.Digest, op *llb.Op, opMeta *llb.OpMetadata, load func(digest.Digest) (interface{}, error)) (*vertex, error) {
 	vtx := &vertex{sys: op.Op, metadata: opMeta, digest: dgst, name: llbOpName(op)}
 	for _, in := range op.Inputs {
 		sub, err := load(in.Digest)
@@ -38,17 +38,17 @@ func loadInternalVertexHelper(v Vertex, cache map[digest.Digest]*vertex) *vertex
 
 // loadLLB loads LLB.
 // fn is executed sequentially.
-func loadLLB(def *pb.Definition, fn func(digest.Digest, *pb.Op, func(digest.Digest) (interface{}, error)) (interface{}, error)) (interface{}, pb.OutputIndex, error) {
+func loadLLB(def *llb.Definition, fn func(digest.Digest, *llb.Op, func(digest.Digest) (interface{}, error)) (interface{}, error)) (interface{}, llb.OutputIndex, error) {
 	if len(def.Def) == 0 {
 		return nil, 0, errors.New("invalid empty definition")
 	}
 
-	allOps := make(map[digest.Digest]*pb.Op)
+	allOps := make(map[digest.Digest]*llb.Op)
 
 	var dgst digest.Digest
 
 	for _, dt := range def.Def {
-		var op pb.Op
+		var op llb.Op
 		if err := (&op).Unmarshal(dt); err != nil {
 			return nil, 0, errors.Wrap(err, "failed to parse llb proto op")
 		}
@@ -79,9 +79,9 @@ func loadLLB(def *pb.Definition, fn func(digest.Digest, *pb.Op, func(digest.Dige
 	return v, lastOp.Inputs[0].Index, err
 }
 
-func llbOpName(op *pb.Op) string {
+func llbOpName(op *llb.Op) string {
 	switch op := op.Op.(type) {
-	case *pb.Op_Source:
+	case *llb.Op_Source:
 		if id, err := source.FromLLB(op); err == nil {
 			if id, ok := id.(*source.LocalIdentifier); ok {
 				if len(id.IncludePatterns) == 1 {
@@ -90,9 +90,9 @@ func llbOpName(op *pb.Op) string {
 			}
 		}
 		return op.Source.Identifier
-	case *pb.Op_Exec:
+	case *llb.Op_Exec:
 		return strings.Join(op.Exec.Meta.Args, " ")
-	case *pb.Op_Build:
+	case *llb.Op_Build:
 		return "build"
 	default:
 		return "unknown"

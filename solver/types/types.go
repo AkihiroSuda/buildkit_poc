@@ -5,7 +5,7 @@ import (
 
 	"github.com/moby/buildkit/exporter"
 	"github.com/moby/buildkit/frontend"
-	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/buildkit/llb"
 	digest "github.com/opencontainers/go-digest"
 )
 
@@ -28,7 +28,7 @@ type Op interface {
 }
 
 type SolveRequest struct {
-	Definition     *pb.Definition
+	Definition     *llb.Definition
 	Frontend       frontend.Frontend
 	Exporter       exporter.ExporterInstance
 	FrontendOpt    map[string]string
@@ -44,7 +44,7 @@ type Vertex interface {
 	// this is capured by the operation resolver method during solve.
 	Sys() interface{}
 	// FIXME(AkihiroSuda): we should not import pb pkg here.
-	Metadata() *pb.OpMetadata
+	Metadata() *llb.OpMetadata
 	// Array of vertexes current vertex depends on.
 	Inputs() []Input
 	Name() string // change this to general metadata

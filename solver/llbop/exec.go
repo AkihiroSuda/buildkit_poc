@@ -11,8 +11,8 @@ import (
 
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/executor"
+	"github.com/moby/buildkit/llb"
 	"github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/progress/logs"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -21,13 +21,13 @@ import (
 const execCacheType = "buildkit.exec.v0"
 
 type execOp struct {
-	op        *pb.ExecOp
+	op        *llb.ExecOp
 	cm        cache.Manager
 	exec      executor.Executor
 	numInputs int
 }
 
-func NewExecOp(v solver.Vertex, op *pb.Op_Exec, cm cache.Manager, exec executor.Executor) (solver.Op, error) {
+func NewExecOp(v solver.Vertex, op *llb.Op_Exec, cm cache.Manager, exec executor.Executor) (solver.Op, error) {
 	return &execOp{
 		op:        op.Exec,
 		cm:        cm,
@@ -39,7 +39,7 @@ func NewExecOp(v solver.Vertex, op *pb.Op_Exec, cm cache.Manager, exec executor.
 func (e *execOp) CacheKey(ctx context.Context) (digest.Digest, error) {
 	dt, err := json.Marshal(struct {
 		Type string
-		Exec *pb.ExecOp
+		Exec *llb.ExecOp
 		OS   string
 		Arch string
 	}{
@@ -71,7 +71,7 @@ func (e *execOp) Run(ctx context.Context, inputs []solver.Ref) ([]solver.Ref, er
 	for _, m := range e.op.Mounts {
 		var mountable cache.Mountable
 		var ref cache.ImmutableRef
-		if m.Input != pb.Empty {
+		if m.Input != llb.Empty {
 			if int(m.Input) > len(inputs) {
 				return nil, errors.Errorf("missing input %d", m.Input)
 			}
@@ -83,8 +83,8 @@ func (e *execOp) Run(ctx context.Context, inputs []solver.Ref) ([]solver.Ref, er
 			}
 			mountable = ref
 		}
-		if m.Output != pb.SkipOutput {
-			if m.Readonly && ref != nil && m.Dest != pb.RootMount { // exclude read-only rootfs
+		if m.Output != llb.SkipOutput {
+			if m.Readonly && ref != nil && m.Dest != llb.RootMount { // exclude read-only rootfs
 				outputs = append(outputs, solver.NewSharedRef(ref).Clone())
 			} else {
 				active, err := e.cm.New(ctx, ref, cache.WithDescription(fmt.Sprintf("mount %s from exec %s", m.Dest, strings.Join(e.op.Meta.Args, " ")))) // TODO: should be method
@@ -95,7 +95,7 @@ func (e *execOp) Run(ctx context.Context, inputs []solver.Ref) ([]solver.Ref, er
 				mountable = active
 			}
 		}
-		if m.Dest == pb.RootMount {
+		if m.Dest == llb.RootMount {
 			root = mountable
 		} else {
 			mounts = append(mounts, executor.Mount{Src: mountable, Dest: m.Dest, Readonly: m.Readonly, Selector: m.Selector})
@@ -149,12 +149,12 @@ func (e *execOp) ContentMask(ctx context.Context) (digest.Digest, [][]string, er
 	}
 
 	srcsMap := make(map[src]struct{})
-	mountsCopy := make([]*pb.Mount, len(e.op.Mounts))
+	mountsCopy := make([]*llb.Mount, len(e.op.Mounts))
 	for i, m := range e.op.Mounts {
 		copy := *m
 		mountsCopy[i] = &copy
-		if m.Input != pb.Empty {
-			if m.Dest != pb.RootMount && m.Readonly { // could also include rw if they don't have a selector, but not sure if helps performance
+		if m.Input != llb.Empty {
+			if m.Dest != llb.RootMount && m.Readonly { // could also include rw if they don't have a selector, but not sure if helps performance
 				srcsMap[src{int(m.Input), path.Join("/", m.Selector)}] = struct{}{}
 				mountsCopy[i].Selector = ""
 			} else {
@@ -181,7 +181,7 @@ func (e *execOp) ContentMask(ctx context.Context) (digest.Digest, [][]string, er
 
 	dt, err := json.Marshal(struct {
 		Type string
-		Exec *pb.ExecOp
+		Exec *llb.ExecOp
 		OS   string
 		Arch string
 	}{

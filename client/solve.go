@@ -12,11 +12,11 @@ import (
 	controlapi "github.com/moby/buildkit/api/services/control"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/identity"
+	llbpb "github.com/moby/buildkit/llb"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
-	"github.com/moby/buildkit/solver/pb"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -116,7 +116,7 @@ func (c *Client) Solve(ctx context.Context, def *llb.Definition, opt SolveOpt, s
 			logrus.Debugf("stopping session")
 			s.Close()
 		}()
-		var pbd *pb.Definition
+		var pbd *llbpb.Definition
 		if def != nil {
 			pbd = def.ToPB()
 		}
@@ -212,7 +212,7 @@ func prepareSyncedDirs(def *llb.Definition, localDirs map[string]string) ([]file
 		}
 	} else {
 		for _, dt := range def.Def {
-			var op pb.Op
+			var op llbpb.Op
 			if err := (&op).Unmarshal(dt); err != nil {
 				return nil, errors.Wrap(err, "failed to parse llb proto op")
 			}

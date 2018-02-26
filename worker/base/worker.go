@@ -23,11 +23,11 @@ import (
 	localexporter "github.com/moby/buildkit/exporter/local"
 	ociexporter "github.com/moby/buildkit/exporter/oci"
 	"github.com/moby/buildkit/identity"
+	"github.com/moby/buildkit/llb"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/llbop"
-	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
 	"github.com/moby/buildkit/source/containerimage"
 	"github.com/moby/buildkit/source/git"
@@ -218,11 +218,11 @@ func (w *Worker) Labels() map[string]string {
 
 func (w *Worker) ResolveOp(v solver.Vertex, s worker.SubBuilder) (solver.Op, error) {
 	switch op := v.Sys().(type) {
-	case *pb.Op_Source:
+	case *llb.Op_Source:
 		return llbop.NewSourceOp(v, op, w.SourceManager)
-	case *pb.Op_Exec:
+	case *llb.Op_Exec:
 		return llbop.NewExecOp(v, op, w.CacheManager, w.Executor)
-	case *pb.Op_Build:
+	case *llb.Op_Build:
 		return llbop.NewBuildOp(v, op, s)
 	default:
 		return nil, errors.Errorf("could not resolve %v", v)

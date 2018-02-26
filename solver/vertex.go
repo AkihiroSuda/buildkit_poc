@@ -7,7 +7,7 @@ import (
 
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/identity"
-	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/buildkit/llb"
 	"github.com/moby/buildkit/util/progress"
 	digest "github.com/opencontainers/go-digest"
 )
@@ -20,7 +20,7 @@ type input struct {
 type vertex struct {
 	mu           sync.Mutex
 	sys          interface{}
-	metadata     *pb.OpMetadata
+	metadata     *llb.OpMetadata
 	inputs       []*input
 	err          error
 	digest       digest.Digest
@@ -49,7 +49,7 @@ func (v *vertex) Sys() interface{} {
 	return v.sys
 }
 
-func (v *vertex) Metadata() *pb.OpMetadata {
+func (v *vertex) Metadata() *llb.OpMetadata {
 	return v.metadata
 }
 
