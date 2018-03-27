@@ -220,17 +220,17 @@ func NewFSSyncTarget(outdir string) session.Attachable {
 	return p
 }
 
-// NewFSSyncTargetFile allows writing into a file. Empty file means stdout
-func NewFSSyncTargetFile(outfile string) session.Attachable {
+// NewFSSyncTargetFile allows writing into an io.WriteCloser
+func NewFSSyncTargetFile(w io.WriteCloser) session.Attachable {
 	p := &fsSyncTarget{
-		outfile: outfile,
+		outfile: w,
 	}
 	return p
 }
 
 type fsSyncTarget struct {
 	outdir  string
-	outfile string
+	outfile io.WriteCloser
 }
 
 func (sp *fsSyncTarget) Register(server *grpc.Server) {
@@ -241,18 +241,8 @@ func (sp *fsSyncTarget) DiffCopy(stream FileSend_DiffCopyServer) error {
 	if sp.outdir != "" {
 		return syncTargetDiffCopy(stream, sp.outdir)
 	}
-	var f *os.File
-	if sp.outfile == "" {
-		f = os.Stdout
-	} else {
-		var err error
-		f, err = os.Create(sp.outfile)
-		if err != nil {
-			return err
-		}
-	}
-	defer f.Close()
-	return writeTargetFile(stream, f)
+	defer sp.outfile.Close()
+	return writeTargetFile(stream, sp.outfile)
 }
 
 func CopyToCaller(ctx context.Context, srcPath string, c session.Caller, progress func(int, bool)) error {

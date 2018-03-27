@@ -88,6 +88,7 @@ func (c *Client) Solve(ctx context.Context, def *llb.Definition, opt SolveOpt, s
 	case ExporterOCI, ExporterDocker:
 		outputFile, ok := opt.ExporterAttrs[exporterOCIDestination]
 		delete(opt.ExporterAttrs, exporterOCIDestination)
+		var outputWriter io.WriteCloser
 		if ok {
 			fi, err := os.Stat(outputFile)
 			if err != nil && !os.IsNotExist(err) {
@@ -96,13 +97,17 @@ func (c *Client) Solve(ctx context.Context, def *llb.Definition, opt SolveOpt, s
 			if err == nil && fi.IsDir() {
 				return errors.Errorf("destination file is a directory")
 			}
+			outputWriter, err = os.Create(outputFile)
+			if err != nil {
+				return err
+			}
 		} else {
 			if _, err := console.ConsoleFromFile(os.Stdout); err == nil {
 				return errors.Errorf("output file is required for %s exporter. refusing to write to console", opt.Exporter)
 			}
-			outputFile = ""
+			outputWriter = os.Stdout
 		}
-		s.Allow(filesync.NewFSSyncTargetFile(outputFile))
+		s.Allow(filesync.NewFSSyncTargetFile(outputWriter))
 	}
 
 	eg.Go(func() error {
