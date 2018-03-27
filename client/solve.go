@@ -80,12 +80,14 @@ func (c *Client) Solve(ctx context.Context, def *llb.Definition, opt SolveOpt, s
 	switch opt.Exporter {
 	case ExporterLocal:
 		outputDir, ok := opt.ExporterAttrs[exporterLocalOutputDir]
+		delete(opt.ExporterAttrs, exporterLocalOutputDir)
 		if !ok {
 			return errors.Errorf("output directory is required for local exporter")
 		}
 		s.Allow(filesync.NewFSSyncTarget(outputDir))
 	case ExporterOCI, ExporterDocker:
 		outputFile, ok := opt.ExporterAttrs[exporterOCIDestination]
+		delete(opt.ExporterAttrs, exporterOCIDestination)
 		if ok {
 			fi, err := os.Stat(outputFile)
 			if err != nil && !os.IsNotExist(err) {
