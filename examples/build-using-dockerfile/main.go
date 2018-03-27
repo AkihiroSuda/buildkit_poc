@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,17 +73,13 @@ func action(clicontext *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	tmpTar, err := ioutil.TempFile("", "buldkit-build-using-dockerfile")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmpTar.Name())
-	solveOpt, err := newSolveOpt(clicontext, tmpTar.Name())
+	pipeR, pipeW := io.Pipe()
+	solveOpt, err := newSolveOpt(clicontext)
 	if err != nil {
 		return err
 	}
 	ch := make(chan *client.SolveStatus)
-	eg, ctx := errgroup.WithContext(appcontext.Context())
+	eg, ctx := errgroup.WithContext(client.ContextWithFSSyncTargetFile(appcontext.Context(), pipeW))
 	eg.Go(func() error {
 		return c.Solve(ctx, nil, *solveOpt, ch)
 	})
@@ -94,18 +90,20 @@ func action(clicontext *cli.Context) error {
 		}
 		return nil
 	})
+	eg.Go(func() error {
+		if err := loadDockerTar(pipeR); err != nil {
+			return err
+		}
+		return pipeR.Close()
+	})
 	if err := eg.Wait(); err != nil {
 		return err
 	}
-	logrus.Infof("Loading the image to Docker as %q. This may take a while.", clicontext.String("tag"))
-	if err := loadDockerTar(tmpTar.Name()); err != nil {
-		return err
-	}
-	logrus.Info("Done")
+	logrus.Infof("Loaded the image %q to Docker.", clicontext.String("tag"))
 	return nil
 }
 
-func newSolveOpt(clicontext *cli.Context, tmpTar string) (*client.SolveOpt, error) {
+func newSolveOpt(clicontext *cli.Context) (*client.SolveOpt, error) {
 	buildCtx := clicontext.Args().First()
 	if buildCtx == "" {
 		return nil, errors.New("please specify build context (e.g. \".\" for the current directory)")
@@ -139,8 +137,8 @@ func newSolveOpt(clicontext *cli.Context, tmpTar string) (*client.SolveOpt, erro
 	return &client.SolveOpt{
 		Exporter: "docker", // TODO: use containerd image store when it is integrated to Docker
 		ExporterAttrs: map[string]string{
-			"name":   clicontext.String("tag"),
-			"output": tmpTar,
+			"name": clicontext.String("tag"),
+			// output is specified via the go context
 		},
 		LocalDirs:     localDirs,
 		Frontend:      "dockerfile.v0", // TODO: use gateway
@@ -148,9 +146,10 @@ func newSolveOpt(clicontext *cli.Context, tmpTar string) (*client.SolveOpt, erro
 	}, nil
 }
 
-func loadDockerTar(tar string) error {
+func loadDockerTar(r io.Reader) error {
 	// no need to use moby/moby/client here
-	cmd := exec.Command("docker", "load", "-i", tar)
+	cmd := exec.Command("docker", "load")
+	cmd.Stdin = r
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

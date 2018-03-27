@@ -86,10 +86,15 @@ func (c *Client) Solve(ctx context.Context, def *llb.Definition, opt SolveOpt, s
 		}
 		s.Allow(filesync.NewFSSyncTarget(outputDir))
 	case ExporterOCI, ExporterDocker:
+		outputWriter := FSSyncTargetFileFromContext(ctx)
 		outputFile, ok := opt.ExporterAttrs[exporterOCIDestination]
 		delete(opt.ExporterAttrs, exporterOCIDestination)
-		var outputWriter io.WriteCloser
 		if ok {
+			if outputWriter != nil {
+				return errors.Errorf("output is already specified via the go context")
+				// TODO(AkihiroSuda): maybe continue with warning? (which do we prefer, ctx or exporter attr here?)
+				// Also, maybe we should consider just removing "output" exporter attr.
+			}
 			fi, err := os.Stat(outputFile)
 			if err != nil && !os.IsNotExist(err) {
 				return errors.Wrapf(err, "invlid destination file: %s", outputFile)
@@ -102,10 +107,12 @@ func (c *Client) Solve(ctx context.Context, def *llb.Definition, opt SolveOpt, s
 				return err
 			}
 		} else {
-			if _, err := console.ConsoleFromFile(os.Stdout); err == nil {
-				return errors.Errorf("output file is required for %s exporter. refusing to write to console", opt.Exporter)
+			if outputWriter == nil {
+				if _, err := console.ConsoleFromFile(os.Stdout); err == nil {
+					return errors.Errorf("output file is required for %s exporter. refusing to write to console", opt.Exporter)
+				}
+				outputWriter = os.Stdout
 			}
-			outputWriter = os.Stdout
 		}
 		s.Allow(filesync.NewFSSyncTargetFile(outputWriter))
 	}
