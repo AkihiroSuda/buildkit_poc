@@ -452,19 +452,25 @@ func dispatchWorkdir(d *dispatchState, c *instructions.WorkdirCommand, commit bo
 }
 
 func dispatchCopy(d *dispatchState, c instructions.SourcesAndDest, sourceState llb.State, isAddCommand bool, cmdToPrint interface{}, chown string) error {
+	for _, src := range c.Sources() {
+		if err := dispatchCopySingle(d, c, c.Dest(), src, sourceState, isAddCommand, cmdToPrint, chown); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func dispatchCopySingle(d *dispatchState, c instructions.SourcesAndDest, cDest, cSrc string, sourceState llb.State, isAddCommand bool, cmdToPrint interface{}, chown string) error {
 	// TODO: this should use CopyOp instead. Current implementation is inefficient
 	img := llb.Image("tonistiigi/copy@sha256:476e0a67a1e4650c6adaf213269a2913deb7c52cbc77f954026f769d51e1a14e")
 
 	dest := path.Join("/dest", pathRelativeToWorkingDir(d.state, c.Dest()))
-	if c.Dest() == "." || c.Dest()[len(c.Dest())-1] == filepath.Separator {
+	if cDest == "." || cDest[len(cDest)-1] == filepath.Separator {
 		dest += string(filepath.Separator)
 	}
 	args := []string{"copy"}
-	if isAddCommand {
-		args = append(args, "--unpack")
-	}
 
-	mounts := make([]llb.RunOption, 0, len(c.Sources()))
+	mounts := make([]llb.RunOption, 0, 1)
 	if chown != "" {
 		args = append(args, fmt.Sprintf("--chown=%s", chown))
 		_, _, err := parseUser(chown)
@@ -481,34 +487,37 @@ func dispatchCopy(d *dispatchState, c instructions.SourcesAndDest, sourceState l
 		commitMessage.WriteString("COPY")
 	}
 
-	for i, src := range c.Sources() {
-		commitMessage.WriteString(" " + src)
-		if isAddCommand && (strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://")) {
-			u, err := url.Parse(src)
-			f := "__unnamed__"
-			if err == nil {
-				if base := path.Base(u.Path); base != "." && base != "/" {
-					f = base
-				}
+	commitMessage.WriteString(" " + cSrc)
+	if isAddCommand && (strings.HasPrefix(cSrc, "http://") || strings.HasPrefix(cSrc, "https://")) {
+		u, err := url.Parse(cSrc)
+		f := "__unnamed__"
+		if err == nil {
+			if base := path.Base(u.Path); base != "." && base != "/" {
+				f = base
 			}
-			target := path.Join(fmt.Sprintf("/src-%d", i), f)
-			args = append(args, target)
-			mounts = append(mounts, llb.AddMount(target, llb.HTTP(src, llb.Filename(f), dfCmd(c)), llb.Readonly))
-		} else {
-			d, f := splitWildcards(src)
-			targetCmd := fmt.Sprintf("/src-%d", i)
-			targetMount := targetCmd
-			if f == "" {
-				f = path.Base(src)
-				targetMount = path.Join(targetMount, f)
-			}
-			targetCmd = path.Join(targetCmd, f)
-			args = append(args, targetCmd)
-			mounts = append(mounts, llb.AddMount(targetMount, sourceState, llb.SourcePath(d), llb.Readonly))
 		}
+		target := path.Join("/src", f)
+		args = append(args, target)
+		mounts = append(mounts, llb.AddMount(target, llb.HTTP(cSrc, llb.Filename(f), dfCmd(c)), llb.Readonly))
+	} else {
+		// Resources from remote URLs are not decompressed.
+		// https://docs.docker.com/engine/reference/builder/#add
+		if isAddCommand {
+			args = append(args, "--unpack")
+		}
+		d, f := splitWildcards(cSrc)
+		targetCmd := "/src"
+		targetMount := targetCmd
+		if f == "" {
+			f = path.Base(cSrc)
+			targetMount = path.Join(targetMount, f)
+		}
+		targetCmd = path.Join(targetCmd, f)
+		args = append(args, targetCmd)
+		mounts = append(mounts, llb.AddMount(targetMount, sourceState, llb.SourcePath(d), llb.Readonly))
 	}
 
-	commitMessage.WriteString(" " + c.Dest())
+	commitMessage.WriteString(" " + cDest)
 
 	args = append(args, dest)
 	run := img.Run(append([]llb.RunOption{llb.Args(args), llb.ReadonlyRootFS(), dfCmd(cmdToPrint)}, mounts...)...)
