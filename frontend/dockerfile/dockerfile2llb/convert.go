@@ -498,7 +498,7 @@ func dispatchCopySingle(d *dispatchState, c instructions.SourcesAndDest, cDest, 
 		}
 		target := path.Join("/src", f)
 		args = append(args, target)
-		mounts = append(mounts, llb.AddMount(target, llb.HTTP(cSrc, llb.Filename(f), dfCmd(c)), llb.Readonly))
+		mounts = append(mounts, llb.AddMount("/src", llb.HTTP(cSrc, llb.Filename(f), dfCmd(c)), llb.Readonly))
 	} else {
 		// Resources from remote URLs are not decompressed.
 		// https://docs.docker.com/engine/reference/builder/#add
