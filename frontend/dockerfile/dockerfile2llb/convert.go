@@ -29,6 +29,8 @@ const (
 	emptyImageName   = "scratch"
 	localNameContext = "context"
 	historyComment   = "buildkit.dockerfile.v0"
+
+	CopyImage = "tonistiigi/copy@sha256:476e0a67a1e4650c6adaf213269a2913deb7c52cbc77f954026f769d51e1a14e"
 )
 
 type ConvertOpt struct {
@@ -465,7 +467,7 @@ func dispatchCopy(d *dispatchState, c instructions.SourcesAndDest, sourceState l
 
 func dispatchCopySingle(d *dispatchState, c instructions.SourcesAndDest, cDest, cSrc string, sourceState llb.State, isAddCommand bool, cmdToPrint interface{}, chown string) error {
 	// TODO: this should use CopyOp instead. Current implementation is inefficient
-	img := llb.Image("tonistiigi/copy@sha256:476e0a67a1e4650c6adaf213269a2913deb7c52cbc77f954026f769d51e1a14e")
+	img := llb.Image(CopyImage)
 
 	dest := path.Join("/dest", pathRelativeToWorkingDir(d.state, c.Dest()))
 	if cDest == "." || cDest[len(cDest)-1] == filepath.Separator {
