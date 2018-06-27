@@ -110,7 +110,7 @@ func (ce *CacheExporter) Finalize(ctx context.Context, cc *v1.CacheChains, targe
 	mfstDone(nil)
 	mp.Add(dgst, buf)
 
-	return push.Push(ctx, ce.opt.SessionManager, mp, dgst, target, false)
+	return push.Push(ctx, ce.opt.SessionManager, mp, dgst, target, false, false)
 }
 
 type RegistryCacheExporter struct {

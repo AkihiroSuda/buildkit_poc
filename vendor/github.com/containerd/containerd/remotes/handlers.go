@@ -40,7 +40,8 @@ func MakeRefKey(ctx context.Context, desc ocispec.Descriptor) string {
 	// product of the context, which may include information about the ongoing
 	// fetch process.
 	switch desc.MediaType {
-	case images.MediaTypeDockerSchema2Manifest, ocispec.MediaTypeImageManifest:
+	case images.MediaTypeDockerSchema2Manifest, ocispec.MediaTypeImageManifest,
+		images.MediaTypeDockerSchema1Manifest, images.MediaTypeDockerSchema1ManifestUnsigned:
 		return "manifest-" + desc.Digest.String()
 	case images.MediaTypeDockerSchema2ManifestList, ocispec.MediaTypeImageIndex:
 		return "index-" + desc.Digest.String()

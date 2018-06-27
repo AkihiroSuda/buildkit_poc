@@ -152,7 +152,7 @@ func (r *dockerFetcher) getV2URLPaths(ctx context.Context, desc ocispec.Descript
 
 	switch desc.MediaType {
 	case images.MediaTypeDockerSchema2Manifest, images.MediaTypeDockerSchema2ManifestList,
-		images.MediaTypeDockerSchema1Manifest,
+		images.MediaTypeDockerSchema1Manifest, images.MediaTypeDockerSchema1ManifestUnsigned,
 		ocispec.MediaTypeImageManifest, ocispec.MediaTypeImageIndex:
 		urls = append(urls, r.url(path.Join("manifests", desc.Digest.String())))
 	}
