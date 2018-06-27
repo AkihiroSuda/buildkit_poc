@@ -35,5 +35,6 @@ const (
 	MediaTypeContainerd1RW                = "application/vnd.containerd.container.rw.tar"
 	MediaTypeContainerd1CheckpointConfig  = "application/vnd.containerd.container.checkpoint.config.v1+proto"
 	// Legacy Docker schema1 manifest
-	MediaTypeDockerSchema1Manifest = "application/vnd.docker.distribution.manifest.v1+prettyjws"
+	MediaTypeDockerSchema1Manifest         = "application/vnd.docker.distribution.manifest.v1+prettyjws"
+	MediaTypeDockerSchema1ManifestUnsigned = "application/vnd.docker.distribution.manifest.v1"
 )

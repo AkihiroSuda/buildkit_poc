@@ -16,6 +16,7 @@ import (
 	"github.com/moby/buildkit/session/auth"
 	"github.com/moby/buildkit/util/imageutil"
 	"github.com/moby/buildkit/util/progress"
+	"github.com/moby/buildkit/util/push/schema1"
 	"github.com/moby/buildkit/util/tracing"
 	digest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -40,7 +41,7 @@ func getCredentialsFunc(ctx context.Context, sm *session.Manager) func(string) (
 	}
 }
 
-func Push(ctx context.Context, sm *session.Manager, cs content.Provider, dgst digest.Digest, ref string, insecure bool) error {
+func Push(ctx context.Context, sm *session.Manager, cs content.Provider, dgst digest.Digest, ref string, insecure, asSchema1Deprecated bool) error {
 	desc := ocispec.Descriptor{
 		Digest: dgst,
 	}
@@ -108,7 +109,11 @@ func Push(ctx context.Context, sm *session.Manager, cs content.Provider, dgst di
 
 	mfstDone := oneOffProgress(ctx, fmt.Sprintf("pushing manifest for %s", ref))
 	for i := len(manifestStack) - 1; i >= 0; i-- {
-		_, err := pushHandler(ctx, manifestStack[i])
+		if asSchema1Deprecated {
+			err = schema1.PushAsSchema1(ctx, pusher, cs, manifestStack[i], ref)
+		} else {
+			_, err = pushHandler(ctx, manifestStack[i])
+		}
 		if err != nil {
 			mfstDone(err)
 			return err

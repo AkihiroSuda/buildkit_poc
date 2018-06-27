@@ -16,11 +16,12 @@ import (
 )
 
 const (
-	keyImageName        = "name"
-	keyPush             = "push"
-	keyInsecure         = "registry.insecure"
-	exporterImageConfig = "containerimage.config"
-	ociTypes            = "oci-mediatypes"
+	keyImageName               = "name"
+	keyPush                    = "push"
+	keyPushAsSchema1Deprecated = "push.schema1deprecated"
+	keyInsecure                = "registry.insecure"
+	exporterImageConfig        = "containerimage.config"
+	ociTypes                   = "oci-mediatypes"
 )
 
 type Opt struct {
@@ -48,6 +49,16 @@ func (e *imageExporter) Resolve(ctx context.Context, opt map[string]string) (exp
 		switch k {
 		case keyImageName:
 			i.targetName = v
+		case keyPushAsSchema1Deprecated:
+			if v == "" {
+				i.pushAsSchema1Deprecated = true
+				continue
+			}
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				return nil, errors.Wrapf(err, "non-bool value specified for %s", k)
+			}
+			i.pushAsSchema1Deprecated = b
 		case keyPush:
 			if v == "" {
 				i.push = true
@@ -89,11 +100,12 @@ func (e *imageExporter) Resolve(ctx context.Context, opt map[string]string) (exp
 
 type imageExporterInstance struct {
 	*imageExporter
-	targetName string
-	push       bool
-	insecure   bool
-	ociTypes   bool
-	config     []byte
+	targetName              string
+	push                    bool
+	pushAsSchema1Deprecated bool
+	insecure                bool
+	ociTypes                bool
+	config                  []byte
 }
 
 func (e *imageExporterInstance) Name() string {
@@ -134,7 +146,7 @@ func (e *imageExporterInstance) Export(ctx context.Context, ref cache.ImmutableR
 			tagDone(nil)
 		}
 		if e.push {
-			if err := push.Push(ctx, e.opt.SessionManager, e.opt.ImageWriter.ContentStore(), desc.Digest, e.targetName, e.insecure); err != nil {
+			if err := push.Push(ctx, e.opt.SessionManager, e.opt.ImageWriter.ContentStore(), desc.Digest, e.targetName, e.insecure, e.pushAsSchema1Deprecated); err != nil {
 				return nil, err
 			}
 		}
