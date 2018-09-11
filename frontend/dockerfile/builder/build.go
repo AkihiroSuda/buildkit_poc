@@ -29,7 +29,7 @@ const (
 	LocalNameDockerfile   = "dockerfile"
 	keyTarget             = "target"
 	keyFilename           = "filename"
-	keyCacheFrom          = "cache-from"
+	keyCacheFrom          = "cache-from" // for registry only
 	defaultDockerfileName = "Dockerfile"
 	dockerignoreFilename  = ".dockerignore"
 	buildArgPrefix        = "build-arg:"
@@ -296,6 +296,7 @@ func Build(ctx context.Context, c client.Client) (*client.Result, error) {
 				r, err := c.Solve(ctx, client.SolveRequest{
 					Definition:      def.ToPB(),
 					ImportCacheRefs: cacheFrom,
+					// leave ImportCacheTypes nil (use registry importer for all refs)
 				})
 				if err != nil {
 					return err

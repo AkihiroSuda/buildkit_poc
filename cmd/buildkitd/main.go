@@ -21,6 +21,8 @@ import (
 	"github.com/containerd/containerd/sys"
 	"github.com/docker/go-connections/sockets"
 	"github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc"
+	"github.com/moby/buildkit/cache/remotecache"
+	localremotecache "github.com/moby/buildkit/cache/remotecache/local"
 	registryremotecache "github.com/moby/buildkit/cache/remotecache/registry"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
@@ -507,13 +509,34 @@ func newController(c *cli.Context, cfg *config.Config) (*control.Controller, err
 
 	resolverFn := resolverFunc(cfg)
 
+	remoteCacheExporterFunc := func(ctx context.Context, typ, ref string) (remotecache.Exporter, error) {
+		switch typ {
+		case "", "registry":
+			return registryremotecache.ResolveCacheExporterFunc(sessionManager, resolverFn)(ctx, typ, ref)
+		case "local":
+			return localremotecache.ResolveCacheExporterFunc(sessionManager)(ctx, typ, ref)
+		default:
+			return nil, errors.Errorf("unsupported cache exporter type: %s", typ)
+		}
+	}
+
+	remoteCacheImporterFunc := func(ctx context.Context, typ, ref string) (remotecache.Importer, specs.Descriptor, error) {
+		switch typ {
+		case "", "registry":
+			return registryremotecache.ResolveCacheImporterFunc(sessionManager, resolverFn)(ctx, typ, ref)
+		case "local":
+			return localremotecache.ResolveCacheImporterFunc(sessionManager)(ctx, typ, ref)
+		default:
+			return nil, specs.Descriptor{}, errors.Errorf("unsupported cache importer type: %s", typ)
+		}
+	}
+
 	return control.NewController(control.Opt{
 		SessionManager:   sessionManager,
 		WorkerController: wc,
 		Frontends:        frontends,
-		// TODO: support non-registry remote cache
-		ResolveCacheExporterFunc: registryremotecache.ResolveCacheExporterFunc(sessionManager, resolverFn),
-		ResolveCacheImporterFunc: registryremotecache.ResolveCacheImporterFunc(sessionManager, resolverFn),
+		ResolveCacheExporterFunc: remoteCacheExporterFunc,
+		ResolveCacheImporterFunc: remoteCacheImporterFunc,
 		CacheKeyStorage:          cacheStorage,
 	})
 }

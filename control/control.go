@@ -211,7 +211,7 @@ func (c *Controller) Solve(ctx context.Context, req *controlapi.SolveRequest) (*
 			return nil, err
 		}
 		exportCacheRef := reference.TagNameOnly(parsed).String()
-		typ := "" // unimplemented yet (typically registry)
+		typ := req.Cache.ExportType // can be empty
 		cacheExporter, err = c.opt.ResolveCacheExporterFunc(ctx, typ, exportCacheRef)
 		if err != nil {
 			return nil, err
@@ -219,19 +219,24 @@ func (c *Controller) Solve(ctx context.Context, req *controlapi.SolveRequest) (*
 	}
 
 	var importCacheRefs []string
+	importCacheTypes := make(map[string]string)
 	for _, ref := range req.Cache.ImportRefs {
 		parsed, err := reference.ParseNormalizedNamed(ref)
 		if err != nil {
 			return nil, err
 		}
-		importCacheRefs = append(importCacheRefs, reference.TagNameOnly(parsed).String())
+		ref2 := reference.TagNameOnly(parsed).String()
+		importCacheRefs = append(importCacheRefs, ref2)
+		importCacheTypes[ref2] = req.Cache.ImportTypes[ref]
 	}
+
 
 	resp, err := c.solver.Solve(ctx, req.Ref, frontend.SolveRequest{
 		Frontend:        req.Frontend,
 		Definition:      req.Definition,
 		FrontendOpt:     req.FrontendAttrs,
 		ImportCacheRefs: importCacheRefs,
+		ImportCacheTypes: importCacheTypes,
 	}, llbsolver.ExporterRequest{
 		Exporter:        expi,
 		CacheExporter:   cacheExporter,

@@ -53,7 +53,7 @@ func (b *llbBridge) Solve(ctx context.Context, req frontend.SolveRequest) (res *
 						if b.resolveCacheImporter == nil {
 							return errors.New("no cache importer is available")
 						}
-						typ := "" // TODO: support non-registry type
+						typ := req.ImportCacheTypes[ref] // can be empty
 						ci, desc, err := b.resolveCacheImporter(ctx, typ, ref)
 						if err != nil {
 							return err

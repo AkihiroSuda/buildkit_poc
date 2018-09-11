@@ -65,6 +65,7 @@ message SolveRequest {
 	// apicaps.CapSolveInlineReturn deprecated
 	bool Final = 10;
 	bytes ExporterAttr = 11;
+	map<string, string> ImportCacheTypes = 12; // same as control.CacheOptions.ImportTypes
 }
 
 message SolveResponse {

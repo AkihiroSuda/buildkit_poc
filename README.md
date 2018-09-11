@@ -189,6 +189,30 @@ buildctl build ... --exporter=oci --exporter-opt output=path/to/output.tar
 buildctl build ... --exporter=oci > output.tar
 ```
 
+### Exporting/Importing build cache (not image itself)
+
+#### To/From registry
+
+```
+buildctl build ... --export-cache localhost:5000/myrepo:buildcache
+buildctl build ... --import-cache localhost:5000/myrepo:buildcache
+```
+
+#### To/From local filesystem
+
+```
+buildctl build ... --export-cache ignoredtag --export-cache-type local --export-cache-opt output=path/to/output-dir
+buildctl build ... --import-cache ignoredtag@sha256:deadbeef --import-cache-type local --import-cache-opt input=path/to/input-dir
+```
+
+#### `--export-cache-opt` options
+* `mode=min` (default): To be documented
+* `mode=max`: To be documented
+* `output=path/to/output-dir`: directory for local cache exporter
+
+#### `--import-cache-opt` options
+* `input=path/to/input-dir`: directory for local cache inporter
+
 ### Other
 
 #### View build cache

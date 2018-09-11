@@ -403,6 +403,7 @@ func (lbf *llbBridgeForwarder) Solve(ctx context.Context, req *pb.SolveRequest) 
 		Frontend:        req.Frontend,
 		FrontendOpt:     req.FrontendOpt,
 		ImportCacheRefs: req.ImportCacheRefs,
+		ImportCacheTypes: req.ImportCacheTypes,
 	})
 	if err != nil {
 		return nil, err

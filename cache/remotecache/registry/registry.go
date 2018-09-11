@@ -17,7 +17,7 @@ import (
 
 func ResolveCacheExporterFunc(sm *session.Manager, resolverOpt resolver.ResolveOptionsFunc) remotecache.ResolveCacheExporterFunc {
 	return func(ctx context.Context, typ, ref string) (remotecache.Exporter, error) {
-		if typ != "" {
+		if typ != "" || typ != "registry" {
 			return nil, errors.Errorf("unsupported cache exporter type: %s", typ)
 		}
 		remote := newRemoteResolver(ctx, resolverOpt, sm, ref)
@@ -31,7 +31,7 @@ func ResolveCacheExporterFunc(sm *session.Manager, resolverOpt resolver.ResolveO
 
 func ResolveCacheImporterFunc(sm *session.Manager, resolverOpt resolver.ResolveOptionsFunc) remotecache.ResolveCacheImporterFunc {
 	return func(ctx context.Context, typ, ref string) (remotecache.Importer, specs.Descriptor, error) {
-		if typ != "" {
+		if typ != "" || typ != "registry" {
 			return nil, specs.Descriptor{}, errors.Errorf("unsupported cache importer type: %s", typ)
 		}
 		remote := newRemoteResolver(ctx, resolverOpt, sm, ref)

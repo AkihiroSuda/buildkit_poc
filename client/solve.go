@@ -8,10 +8,12 @@ import (
 	"strings"
 	"time"
 
+	contentlocal "github.com/containerd/containerd/content/local"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/session"
+	sessioncontent "github.com/moby/buildkit/session/content"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
 	"github.com/moby/buildkit/solver/pb"
@@ -33,8 +35,11 @@ type SolveOpt struct {
 	Frontend            string
 	FrontendAttrs       map[string]string
 	ExportCache         string
+	ExportCacheType     string
 	ExportCacheAttrs    map[string]string
 	ImportCache         []string
+	ImportCacheTypes    map[string]string
+	ImportCacheAttrs    map[string]string
 	Session             []session.Attachable
 	AllowedEntitlements []entitlements.Entitlement
 }
@@ -119,6 +124,29 @@ func (c *Client) solve(ctx context.Context, def *llb.Definition, runGateway runG
 		}
 	}
 
+	csDir := ""
+	if opt.ExportCacheType == "local" {
+		csDir = opt.ExportCacheAttrs["output"]
+	}
+	for _, typ := range opt.ImportCacheTypes {
+		if typ == "local" {
+			input := opt.ImportCacheAttrs["input"]
+			if csDir != "" && csDir != input {
+				return nil, errors.Errorf("local cache importer input path needs to correspond with the local cache exporter output path (if any)")
+			}
+		}
+	}
+	if csDir != "" {
+		if err := os.MkdirAll(csDir, 0755); err != nil {
+			return nil, err
+		}
+		cs, err := contentlocal.NewStore(csDir)
+		if err != nil {
+			return nil, err
+		}
+		s.Allow(sessioncontent.NewAttachable(cs))
+	}
+
 	eg.Go(func() error {
 		return s.Run(statusContext, grpchijack.Dialer(c.controlClient()))
 	})
@@ -153,6 +181,8 @@ func (c *Client) solve(ctx context.Context, def *llb.Definition, runGateway runG
 				ExportRef:   opt.ExportCache,
 				ImportRefs:  opt.ImportCache,
 				ExportAttrs: opt.ExportCacheAttrs,
+				ImportTypes: opt.ImportCacheTypes,
+				ExportType: opt.ExportCacheType,
 			},
 			Entitlements: opt.AllowedEntitlements,
 		})

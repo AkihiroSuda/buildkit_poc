@@ -36,6 +36,7 @@ type SolveRequest struct {
 	Frontend        string
 	FrontendOpt     map[string]string
 	ImportCacheRefs []string
+	ImportCacheTypes map[string]string
 }
 
 type WorkerInfo struct {

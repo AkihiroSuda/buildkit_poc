@@ -264,6 +264,7 @@ func (c *grpcClient) Solve(ctx context.Context, creq client.SolveRequest) (*clie
 		Frontend:          creq.Frontend,
 		FrontendOpt:       creq.FrontendOpt,
 		ImportCacheRefs:   creq.ImportCacheRefs,
+		ImportCacheTypes:   creq.ImportCacheTypes,
 		AllowResultReturn: true,
 	}
 

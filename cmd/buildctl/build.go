@@ -66,6 +66,11 @@ var buildCommand = cli.Command{
 			Name:  "export-cache",
 			Usage: "Reference to export build cache to",
 		},
+		cli.StringFlag{
+			Name:  "export-cache-type",
+			Usage: "Specify cache exporter. registry or local.",
+			Value: "registry",
+		},
 		cli.StringSliceFlag{
 			Name:  "export-cache-opt",
 			Usage: "Define custom options for cache exporting",
@@ -73,6 +78,17 @@ var buildCommand = cli.Command{
 		cli.StringSliceFlag{
 			Name:  "import-cache",
 			Usage: "Reference to import build cache from",
+		},
+		cli.StringFlag{
+			Name: "import-cache-type",
+			// RFC(AkihiroSuda): Maybe we should meld typ into ref in "CSV" style? (If so, do we want to use CSV only for CLI? For API as well?)
+			// e.g. --import-cache ref=localhost:5000/foo/bar:baz,type=registry
+			Usage: "Specify cache importer (for all refs). registry or local.",
+			Value: "registry",
+		},
+		cli.StringSliceFlag{
+			Name:  "import-cache-opt",
+			Usage: "Define custom options for cache exporting",
 		},
 		cli.StringSliceFlag{
 			Name:  "secret",
@@ -152,6 +168,11 @@ func build(clicontext *cli.Context) error {
 	ch := make(chan *client.SolveStatus)
 	eg, ctx := errgroup.WithContext(commandContext(clicontext))
 
+	importCacheTypes := make(map[string]string)
+	for _, s := range clicontext.StringSlice("import-cache") {
+		importCacheTypes[s] = clicontext.String("import-cache-type")
+	}
+
 	solveOpt := client.SolveOpt{
 		Exporter: clicontext.String("exporter"),
 		// ExporterAttrs is set later
@@ -159,7 +180,9 @@ func build(clicontext *cli.Context) error {
 		Frontend: clicontext.String("frontend"),
 		// FrontendAttrs is set later
 		ExportCache:         clicontext.String("export-cache"),
+		ExportCacheType:     clicontext.String("export-cache-type"),
 		ImportCache:         clicontext.StringSlice("import-cache"),
+		ImportCacheTypes:    importCacheTypes,
 		Session:             attachable,
 		AllowedEntitlements: allowed,
 	}
