@@ -35,7 +35,9 @@ const (
 	localNameContext = "context"
 	historyComment   = "buildkit.dockerfile.v0"
 
-	DefaultCopyImage = "tonistiigi/copy:v0.1.7@sha256:9aab7d9ab369c6daf4831bf0653f7592110ab4b7e8a33fee2b9dca546e9d3089"
+	//	DefaultCopyImage = "tonistiigi/copy:v0.1.7@sha256:9aab7d9ab369c6daf4831bf0653f7592110ab4b7e8a33fee2b9dca546e9d3089"
+	// https://github.com/tonistiigi/copy/pull/16/commits/605e2612e6b4e1eb37f5dfbb628d8b8975aea04d
+	DefaultCopyImage = "akihirosuda/tmp-public:copy-16@sha256:90bb2bc9db3d264d0a95fe25986f7bdc0fe9c0dd951817613c945e4bf69f13dd"
 )
 
 type ConvertOpt struct {
