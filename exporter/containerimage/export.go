@@ -20,12 +20,14 @@ import (
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/util/compression"
 	"github.com/moby/buildkit/util/contentutil"
+	"github.com/moby/buildkit/util/estargzlayers"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/push"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/identity"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -137,6 +139,9 @@ func (e *imageExporter) Resolve(ctx context.Context, opt map[string]string) (exp
 			switch v {
 			case "gzip":
 				i.layerCompression = compression.Gzip
+			case "estargz":
+				i.layerCompression = compression.Gzip
+				i.estargz = true
 			case "uncompressed":
 				i.layerCompression = compression.Uncompressed
 			default:
@@ -149,6 +154,11 @@ func (e *imageExporter) Resolve(ctx context.Context, opt map[string]string) (exp
 			i.meta[k] = []byte(v)
 		}
 	}
+
+	if i.estargz && !i.ociTypes {
+		logrus.Warn("estargz compression specified without oci-mediatypes. No support for layer verification.")
+	}
+
 	return i, nil
 }
 
@@ -163,6 +173,7 @@ type imageExporterInstance struct {
 	nameCanonical    bool
 	danglingPrefix   string
 	layerCompression compression.Type
+	estargz          bool
 	meta             map[string][]byte
 }
 
@@ -171,6 +182,9 @@ func (e *imageExporterInstance) Name() string {
 }
 
 func (e *imageExporterInstance) Export(ctx context.Context, src exporter.Source, sessionID string) (map[string]string, error) {
+	if e.estargz {
+		ctx = estargzlayers.UseEStarGZLayerMode(ctx)
+	}
 	if src.Metadata == nil {
 		src.Metadata = make(map[string][]byte)
 	}

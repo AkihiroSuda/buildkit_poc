@@ -226,11 +226,18 @@ Keys supported by image output:
 * `unpack=true`: unpack image after creation (for use with containerd)
 * `dangling-name-prefix=[value]`: name image with `prefix@<digest>` , used for anonymous images
 * `name-canonical=true`: add additional canonical name `name@<digest>`
-* `compression=[uncompressed,gzip]`: choose compression type for layer, gzip is default value
-
+* `compression=[uncompressed,gzip,estargz]`: choose compression type for layer, gzip is default value.
+  [estargz](https://github.com/containerd/stargz-snapshotter/blob/master/docs/stargz-estargz.md) produces gzip with support for lazy-pulling.
 
 If credentials are required, `buildctl` will attempt to read Docker configuration file `$DOCKER_CONFIG/config.json`.
 `$DOCKER_CONFIG` defaults to `~/.docker`.
+
+Remarks about `compression=estargz`:
+- It is highly recommended to set `oci-mediatypes` to true.
+  Otherwise it produces layers without the annotation for digest verification.
+- Currently, base layers are not converted to eStargz. So make sure to use [pre-converted eStargz base images](https://github.com/containerd/stargz-snapshotter/blob/master/docs/pre-converted-images.md).
+  Future version may convert base images as well.
+- No need to use stargz snapshotter for producing eStargz.
 
 #### Local directory
 

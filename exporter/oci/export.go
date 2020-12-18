@@ -16,11 +16,13 @@ import (
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/util/compression"
 	"github.com/moby/buildkit/util/contentutil"
+	"github.com/moby/buildkit/util/estargzlayers"
 	"github.com/moby/buildkit/util/grpcerrors"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/progress"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 )
 
@@ -64,6 +66,9 @@ func (e *imageExporter) Resolve(ctx context.Context, opt map[string]string) (exp
 			switch v {
 			case "gzip":
 				i.layerCompression = compression.Gzip
+			case "estargz":
+				i.layerCompression = compression.Gzip
+				i.estargz = true
 			case "uncompressed":
 				i.layerCompression = compression.Uncompressed
 			default:
@@ -92,6 +97,9 @@ func (e *imageExporter) Resolve(ctx context.Context, opt map[string]string) (exp
 	} else {
 		i.ociTypes = *ot
 	}
+	if i.estargz && !i.ociTypes {
+		logrus.Warn("estargz compression specified without oci-mediatypes. No support for layer verification.")
+	}
 	return i, nil
 }
 
@@ -101,6 +109,7 @@ type imageExporterInstance struct {
 	name             string
 	ociTypes         bool
 	layerCompression compression.Type
+	estargz          bool
 }
 
 func (e *imageExporterInstance) Name() string {
@@ -108,6 +117,9 @@ func (e *imageExporterInstance) Name() string {
 }
 
 func (e *imageExporterInstance) Export(ctx context.Context, src exporter.Source, sessionID string) (map[string]string, error) {
+	if e.estargz {
+		ctx = estargzlayers.UseEStarGZLayerMode(ctx)
+	}
 	if e.opt.Variant == VariantDocker && len(src.Refs) > 0 {
 		return nil, errors.Errorf("docker exporter does not currently support exporting manifest lists")
 	}

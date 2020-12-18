@@ -14,6 +14,7 @@ import (
 	"github.com/moby/buildkit/executor/containerdexecutor"
 	"github.com/moby/buildkit/executor/oci"
 	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
+	"github.com/moby/buildkit/util/estargzlayers"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/network/netproviders"
 	"github.com/moby/buildkit/util/winlayers"
@@ -108,7 +109,7 @@ func newContainerd(root string, client *containerd.Client, snapshotterName, ns s
 		Snapshotter:    snap,
 		ContentStore:   cs,
 		Applier:        winlayers.NewFileSystemApplierWithWindows(cs, df),
-		Differ:         winlayers.NewWalkingDiffWithWindows(cs, df),
+		Differ:         winlayers.NewWalkingDiffWithWindows(cs, estargzlayers.NewWalkingDiffWithEStarGZ(cs, df)),
 		ImageStore:     client.ImageService(),
 		Platforms:      platforms,
 		LeaseManager:   lm,

@@ -17,6 +17,7 @@ import (
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/executor/runcexecutor"
 	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
+	"github.com/moby/buildkit/util/estargzlayers"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/network/netproviders"
 	"github.com/moby/buildkit/util/winlayers"
@@ -117,7 +118,7 @@ func NewWorkerOpt(root string, snFactory SnapshotterFactory, rootless bool, proc
 		Snapshotter:     snap,
 		ContentStore:    c,
 		Applier:         winlayers.NewFileSystemApplierWithWindows(c, apply.NewFileSystemApplier(c)),
-		Differ:          winlayers.NewWalkingDiffWithWindows(c, walking.NewWalkingDiff(c)),
+		Differ:          winlayers.NewWalkingDiffWithWindows(c, estargzlayers.NewWalkingDiffWithEStarGZ(c, walking.NewWalkingDiff(c))),
 		ImageStore:      nil, // explicitly
 		Platforms:       []specs.Platform{platforms.Normalize(platforms.DefaultSpec())},
 		IdentityMapping: idmap,
