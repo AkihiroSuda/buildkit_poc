@@ -27,6 +27,9 @@ import (
 	"github.com/moby/buildkit/solver/errdefs"
 	"github.com/moby/buildkit/solver/pb"
 	binfotypes "github.com/moby/buildkit/util/buildinfo/types"
+	"github.com/moby/buildkit/util/pin"
+	pintypes "github.com/moby/buildkit/util/pin/types"
+	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
@@ -163,7 +166,7 @@ func Build(ctx context.Context, c client.Client) (*client.Result, error) {
 
 	name := "load build definition from " + filename
 
-	filenames := []string{filename, filename + ".dockerignore"}
+	filenames := []string{filename, filename + ".dockerignore", filename + ".sum"}
 
 	// dockerfile is also supported casing moby/moby#10858
 	if path.Base(filename) == defaultDockerfileName {
@@ -270,6 +273,7 @@ func Build(ctx context.Context, c client.Client) (*client.Result, error) {
 	var dtDockerfile []byte
 	var dtDockerignore []byte
 	var dtDockerignoreDefault []byte
+	var dtDockerfileSum []byte
 	eg.Go(func() error {
 		res, err := c.Solve(ctx2, client.SolveRequest{
 			Definition: def.ToPB(),
@@ -310,6 +314,17 @@ func Build(ctx context.Context, c client.Client) (*client.Result, error) {
 		})
 		if err == nil {
 			dtDockerignore = dt
+		}
+		dockerfileSumFilename := filename + ".sum"
+		if _, err := ref.StatFile(ctx, client.StatRequest{
+			Path: dockerfileSumFilename,
+		}); err == nil {
+			dtDockerfileSum, err = ref.ReadFile(ctx2, client.ReadRequest{
+				Filename: dockerfileSumFilename,
+			})
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -427,9 +442,23 @@ func Build(ctx context.Context, c client.Client) (*client.Result, error) {
 					}
 				}()
 
+				var metaResolver llb.ImageMetaResolver = c
+				var pinApplier *pin.Applier
+				if dtDockerfileSum != nil {
+					var pinData pintypes.Pin
+					if err := json.Unmarshal(dtDockerfileSum, &pinData); err != nil {
+						return err
+					}
+					pinApplier = &pin.Applier{
+						Pin:               pinData,
+						ImageMetaResolver: metaResolver,
+					}
+					metaResolver = pinApplier
+				}
+
 				st, img, bi, err := dockerfile2llb.Dockerfile2LLB(ctx, dtDockerfile, dockerfile2llb.ConvertOpt{
 					Target:           opts[keyTarget],
-					MetaResolver:     c,
+					MetaResolver:     metaResolver,
 					BuildArgs:        filter(opts, buildArgPrefix),
 					Labels:           filter(opts, labelPrefix),
 					CacheIDNamespace: opts[keyCacheNSArg],
@@ -455,7 +484,8 @@ func Build(ctx context.Context, c client.Client) (*client.Result, error) {
 						}
 						c.Warn(ctx, defVtx, msg, warnOpts(sourceMap, location, detail, url))
 					},
-					ContextByName: contextByNameFunc(c, tp),
+					ContextByName: contextByNameFunc(c, metaResolver, tp),
+					PinApplier:    pinApplier,
 				})
 
 				if err != nil {
@@ -509,6 +539,13 @@ func Build(ctx context.Context, c client.Client) (*client.Result, error) {
 				ref, err := r.SingleRef()
 				if err != nil {
 					return err
+				}
+
+				if len(dtDockerfileSum) != 0 {
+					bi.ConsumedPin = &binfotypes.ConsumedPin{
+						Digest:  digest.FromBytes(dtDockerfileSum),
+						Sources: pinApplier.Consumed().Sources,
+					}
 				}
 
 				buildinfo, err := json.Marshal(bi)
@@ -787,7 +824,7 @@ func warnOpts(sm *llb.SourceMap, r *parser.Range, detail [][]byte, url string) c
 	return opts
 }
 
-func contextByNameFunc(c client.Client, p *ocispecs.Platform) func(context.Context, string) (*llb.State, *dockerfile2llb.Image, *binfotypes.BuildInfo, error) {
+func contextByNameFunc(c client.Client, metaResolver llb.ImageMetaResolver, p *ocispecs.Platform) func(context.Context, string) (*llb.State, *dockerfile2llb.Image, *binfotypes.BuildInfo, error) {
 	return func(ctx context.Context, name string) (*llb.State, *dockerfile2llb.Image, *binfotypes.BuildInfo, error) {
 		named, err := reference.ParseNormalizedNamed(name)
 		if err != nil {
@@ -801,7 +838,7 @@ func contextByNameFunc(c client.Client, p *ocispecs.Platform) func(context.Conte
 		}
 		if p != nil {
 			name := name + "::" + platforms.Format(platforms.Normalize(*p))
-			st, img, bi, err := contextByName(ctx, c, name, p)
+			st, img, bi, err := contextByName(ctx, c, metaResolver, name, p)
 			if err != nil {
 				return nil, nil, nil, err
 			}
@@ -809,11 +846,11 @@ func contextByNameFunc(c client.Client, p *ocispecs.Platform) func(context.Conte
 				return st, img, bi, nil
 			}
 		}
-		return contextByName(ctx, c, name, p)
+		return contextByName(ctx, c, metaResolver, name, p)
 	}
 }
 
-func contextByName(ctx context.Context, c client.Client, name string, platform *ocispecs.Platform) (*llb.State, *dockerfile2llb.Image, *binfotypes.BuildInfo, error) {
+func contextByName(ctx context.Context, c client.Client, metaResolver llb.ImageMetaResolver, name string, platform *ocispecs.Platform) (*llb.State, *dockerfile2llb.Image, *binfotypes.BuildInfo, error) {
 	opts := c.BuildOpts().Opts
 	v, ok := opts["context:"+name]
 	if !ok {
@@ -829,7 +866,7 @@ func contextByName(ctx context.Context, c client.Client, name string, platform *
 		ref := strings.TrimPrefix(vv[1], "//")
 		imgOpt := []llb.ImageOption{
 			llb.WithCustomName("[context " + name + "] " + ref),
-			llb.WithMetaResolver(c),
+			llb.WithMetaResolver(metaResolver),
 		}
 		if platform != nil {
 			imgOpt = append(imgOpt, llb.Platform(*platform))

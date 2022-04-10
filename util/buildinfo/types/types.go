@@ -2,6 +2,7 @@ package binfotypes
 
 import (
 	srctypes "github.com/moby/buildkit/source/types"
+	digest "github.com/opencontainers/go-digest"
 )
 
 // ImageConfigField defines the key of build dependencies.
@@ -23,6 +24,8 @@ type BuildInfo struct {
 	Attrs map[string]*string `json:"attrs,omitempty"`
 	// Sources defines build dependencies.
 	Sources []Source `json:"sources,omitempty"`
+	// ConsumedPin defines the consumed pin (if any)
+	ConsumedPin *ConsumedPin `json:"consumedPin,omitempty"`
 	// Deps defines context dependencies.
 	Deps map[string]BuildInfo `json:"deps,omitempty"`
 }
@@ -50,3 +53,11 @@ const (
 	SourceTypeGit         SourceType = srctypes.GitScheme
 	SourceTypeHTTP        SourceType = srctypes.HTTPScheme
 )
+
+// ConsumedPin contains consumed pin data.
+type ConsumedPin struct {
+	// Digest of the pin data.
+	Digest digest.Digest `json:"digest,omitempty"`
+	// Sources consumed.
+	Sources []Source `json:"sources,omitempty"`
+}

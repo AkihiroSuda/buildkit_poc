@@ -127,3 +127,33 @@ jq '.' metadata.json
   "containerimage.digest": "sha256:..."
 }
 ```
+
+### Reproducible build with `Dockerfile.sum`
+
+`Dockerfile.sum` is an equivalent of `go.sum` but s/go/Dockerfile/ .
+`Dockerfile.sum` was introduced in the `docker/dockerfile:1.5.0` syntax.
+
+The content of `Dockerfile.sum` is a subset of the build info structure:
+```json
+{
+    "sources": [
+      {
+        "type": "docker-image",
+        "ref": "docker.io/library/alpine:latest",
+        "pin": "sha256:4edbd2beb5f78b1014028f4fbb99f3237d9561100b6881aabbf5acce2c4f9454"
+      },
+      {
+        "type": "http",
+        "ref": "https://raw.githubusercontent.com/moby/buildkit/v0.10.1/README.md",
+        "pin": "sha256:6e4b94fc270e708e1068be28bd3551dc6917a4fc5a61293d51bb36e6b75c4b53"
+      }
+    ]
+}
+```
+
+When `Dockerfile.sum` exists in the context, the Dockerfile builder does:
+- Pinning the digest of `docker-image` sources (`FROM ...`)
+- Pinning the digest of `http` sources (`ADD https://...`)
+- Recording the consumed entries to the build info structure (`["containerimage.buildinfo"].consumedPin`)
+
+In the future, Dockerfile should also support `ADD git://...` and pinning its commit hash.
