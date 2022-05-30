@@ -641,6 +641,59 @@ func TestFileCreatedTime(t *testing.T) {
 	require.Equal(t, dt3.UnixNano(), copy.Timestamp)
 }
 
+func TestFileOptimize(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Optimizable", func(t *testing.T) {
+		a := Copy(Git("https://github.com/moby/buildkit.git", "v0.4.2"), "/", "/")
+
+		t.Run("WithOptimization", func(t *testing.T) {
+			st, optimized := Scratch().FileOptimize(a, true)
+			require.Equal(t, true, optimized)
+			def, err := st.Marshal(context.TODO())
+			require.NoError(t, err)
+			m, arr := parseDef(t, def.Def)
+			logParsedDef(t, m, arr)
+			require.Equal(t, 2, len(arr))
+			require.Equal(t, "git://github.com/moby/buildkit.git#v0.4.2", m[arr[1].Inputs[0].Digest].Op.(*pb.Op_Source).Source.Identifier)
+		})
+
+		t.Run("WithoutOptimization", func(t *testing.T) {
+			st, optimized := Scratch().FileOptimize(a, false)
+			require.Equal(t, false, optimized)
+			def, err := st.Marshal(context.TODO())
+			require.NoError(t, err)
+			m, arr := parseDef(t, def.Def)
+			logParsedDef(t, m, arr)
+			require.Equal(t, 3, len(arr))
+			require.IsType(t, "git://github.com/moby/buildkit.git#v0.4.2", m[arr[1].Inputs[0].Digest].Op.(*pb.Op_Source).Source.Identifier)
+			require.IsType(t, &pb.FileAction_Copy{}, m[arr[2].Inputs[0].Digest].Op.(*pb.Op_File).File.Actions[0].Action)
+		})
+	})
+
+	t.Run("NotOptimizable", func(t *testing.T) {
+		a := Copy(Git("https://github.com/moby/buildkit.git", "v0.4.2"), "/", "/foo")
+		st, optimized := Scratch().FileOptimize(a, true)
+		require.Equal(t, false, optimized)
+		def, err := st.Marshal(context.TODO())
+		require.NoError(t, err)
+		m, arr := parseDef(t, def.Def)
+		logParsedDef(t, m, arr)
+		require.Equal(t, 3, len(arr))
+		require.Equal(t, "git://github.com/moby/buildkit.git#v0.4.2", m[arr[1].Inputs[0].Digest].Op.(*pb.Op_Source).Source.Identifier)
+		require.IsType(t, &pb.FileAction_Copy{}, m[arr[2].Inputs[0].Digest].Op.(*pb.Op_File).File.Actions[0].Action)
+	})
+}
+
+func logParsedDef(t testing.TB, m map[digest.Digest]pb.Op, arr []pb.Op) {
+	for i, f := range arr {
+		for j, input := range f.Inputs {
+			op := m[input.Digest]
+			t.Logf("Ops[%d].Inputs[%d].Op=%+v", i, j, op.Op)
+		}
+	}
+}
+
 func parseDef(t *testing.T, def [][]byte) (map[digest.Digest]pb.Op, []pb.Op) {
 	m := map[digest.Digest]pb.Op{}
 	arr := make([]pb.Op, 0, len(def))

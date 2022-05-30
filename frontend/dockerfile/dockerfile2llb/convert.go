@@ -1141,7 +1141,8 @@ func dispatchCopy(d *dispatchState, cfg copyConfig) error {
 
 		d.state = d.state.WithOutput(llb.Merge([]llb.State{d.state, llb.Scratch().File(a, copyOpts...)}, mergeOpts...).Output())
 	} else {
-		d.state = d.state.File(a, fileOpt...)
+		const attemptOptimization = true
+		d.state, _ = d.state.FileOptimize(a, attemptOptimization, fileOpt...)
 	}
 
 	return commitToHistory(&d.image, commitMessage.String(), true, &d.state)

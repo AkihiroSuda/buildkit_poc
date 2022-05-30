@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"path"
 	"strings"
 
 	"github.com/containerd/containerd/platforms"
@@ -274,12 +275,42 @@ func (s State) Run(ro ...RunOption) ExecState {
 }
 
 func (s State) File(a *FileAction, opts ...ConstraintsOpt) State {
+	res, _ := s.FileOptimize(a, false, opts...)
+	return res
+}
+
+// FileOptimize supports optimization.
+// The optimized result may not contain FileOp.
+//
+// e.g., llb.Scratch().File(llb.Copy(llb.Git(), "/", "/")) --> llb.Git()
+func (s State) FileOptimize(a *FileAction, attemptOptimization bool, opts ...ConstraintsOpt) (State, bool) {
 	var c Constraints
 	for _, o := range opts {
 		o.SetConstraintsOption(&c)
 	}
 
-	return s.WithOutput(NewFileOp(s, a, c).Output())
+	if attemptOptimization {
+		if cpA, ok := a.action.(*fileActionCopy); ok &&
+			a.prev == nil &&
+			path.Clean(cpA.src) == "/" && path.Clean(cpA.dest) == "/" &&
+			cpA.fas == nil &&
+			cpA.info.ChownOpt == nil &&
+			cpA.state != nil {
+			if o := cpA.state.Output(); o != nil {
+				switch o.(type) {
+				case *output:
+					switch o.(*output).vertex.(type) {
+					case *SourceOp:
+						newState := s.WithOutput(o)
+						newState.SetMarshalDefaults(opts...)
+						return newState, true
+					}
+				}
+			}
+		}
+	}
+
+	return s.WithOutput(NewFileOp(s, a, c).Output()), false
 }
 
 func (s State) AddEnv(key, value string) State {
